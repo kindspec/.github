@@ -43,6 +43,18 @@ Only rowspec exists. The other two are a named intention and a settled
 identity decision, not a draft — there is no specification for either, and
 saying so is cheaper than being asked.
 
+Two repositories support all three:
+
+| | |
+|---|---|
+| **[kindkit](https://github.com/kindspec/kindkit)** | the shared conformance runner, mutation gate and case-tree convention |
+| **[research](https://github.com/kindspec/research)** | the design record — every measurement these specs cite, and the code that produced it |
+
+The research repository is published for one reason: the specs cite those
+measurements by name, and a citation that resolves to nothing is not evidence.
+It redistributes no corpora; each one is named with its source so a result can
+be reproduced rather than trusted.
+
 ## The suite is the deliverable
 
 The specification exists so the conformance suite has something to check. The
