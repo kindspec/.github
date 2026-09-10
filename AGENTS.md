@@ -79,19 +79,41 @@ A PR merges when **both** hold:
 
 ### 3.1 What is enforced, and what is not
 
-Clause 1 is enforced by a repository ruleset on the default branch of every
-kindspec repository. Direct pushes to `main` are rejected, history cannot be
-rewritten or the branch deleted, only squash merges are allowed, and the
-branch must be up to date with `main` before merging.
+Clause 1 is enforced by a repository ruleset on the default branch of **all six**
+kindspec repositories. Direct pushes to `main` are rejected, history cannot be
+rewritten or the branch deleted, and only squash merges are allowed.
 
-    rowspec     conformance, xlsx-extra, passes-on-a-good-tree, fails-on-a-broken-total
-    kindkit     check
-    blockspec   — no CI of its own yet
-    research    — no CI of its own yet
-    .github     — no CI of its own yet
+    repo        required checks                                            strict
+    rowspec     conformance, xlsx-extra,                                   yes
+                passes-on-a-good-tree, fails-on-a-broken-total
+    kindkit     check                                                      yes
+    blockspec   none — no workflows of its own yet                         n/a
+    nodespec    none — no workflows of its own yet                         n/a
+    research    none — no workflows of its own yet                         n/a
+    .github     none — no workflows of its own yet                         n/a
 
-Nobody bypasses: the bypass list is empty, and that includes org owners. A rule
-that its author can step around is the thing this project exists not to ship.
+**"Strict" — branch must be up to date with `main` before merging — applies only
+to `rowspec` and `kindkit`.** It is a parameter *of* the required-checks rule, so
+a repository with no required checks has no up-to-date requirement either. Say
+"two of six", not "all", and add it when those repositories gain workflows.
+
+**CodeQL runs on every repository** through GitHub's default setup, and is
+deliberately **not** required. Its check names are generated from language
+detection — `blockspec` currently detects no language and produces no `Analyze`
+run at all — so requiring them would be a rule whose contexts move underneath it,
+and would deadlock `blockspec` outright. Clause 1 says *every* workflow: for
+CodeQL that means read it, because the gate will not.
+
+Nobody bypasses: the bypass list is empty on all six, and that includes org
+owners. A rule that its author can step around is the thing this project exists
+not to ship.
+
+**`require_extra_approval_for_unattributed_changes` is off, deliberately.**
+GitHub defaults it on, and it adds one to the approval count for changes not
+attributed to a person — the agent case, which is most of this org's work. With
+one member, no self-approval, and an empty bypass list, that turns an
+agent-authored pull request into one nobody can merge and nobody can override.
+Revisit it when there is a second person to approve.
 
 **Clause 2 is not enforced by anything.** No machine checks that a reviewer
 agent ran, and the ruleset requires zero approving reviews — because the review
@@ -104,9 +126,15 @@ rather than implying the green tick covers it.
 
 Each is the pattern in §2.2, one layer up in the infrastructure.
 
-- **A required check is matched by job name.** Rename a job and the requirement
-  silently stops applying — the rule does not fail, it matches nothing. When you
-  rename a job, update the ruleset in the same change.
+- **A required check is matched by job name, and a name that never reports
+  blocks the merge forever.** This is the opposite of what it sounds like: the
+  requirement does not quietly lapse, it pins the pull request at *"Expected —
+  waiting for status to be reported"* and nothing can move it. Renaming
+  `conformance` runs the renamed job on that branch, leaves the required
+  `conformance` context unreported, and makes that pull request unmergeable —
+  by anyone, with no bypass. **The ruleset must be edited before the rename
+  lands, not in the same change**, because the change that renames the job is
+  itself the change that cannot merge.
 - **A new workflow is not required by default.** Adding CI to a repository does
   not add it to the ruleset. A repository can gain a suite that never gates a
   merge, which is exactly the shape of a check nobody is running.
