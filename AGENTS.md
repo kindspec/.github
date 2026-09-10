@@ -77,6 +77,48 @@ A PR merges when **both** hold:
    addressed. Independent means: it did not write the code, and it is given the
    diff and the repository's rules but not the authoring conversation.
 
+### 3.1 What is enforced, and what is not
+
+Clause 1 is enforced by a repository ruleset on the default branch of every
+kindspec repository. Direct pushes to `main` are rejected, history cannot be
+rewritten or the branch deleted, only squash merges are allowed, and the
+branch must be up to date with `main` before merging.
+
+    rowspec     conformance, xlsx-extra, passes-on-a-good-tree, fails-on-a-broken-total
+    kindkit     check
+    blockspec   — no CI of its own yet
+    research    — no CI of its own yet
+    .github     — no CI of its own yet
+
+Nobody bypasses: the bypass list is empty, and that includes org owners. A rule
+that its author can step around is the thing this project exists not to ship.
+
+**Clause 2 is not enforced by anything.** No machine checks that a reviewer
+agent ran, and the ruleset requires zero approving reviews — because the review
+is performed by an agent, which cannot approve a GitHub pull request. So the
+adversarial discipline, which is the more important of the two clauses, is
+honour-system and will stay that way until something can attest to it. Say so
+rather than implying the green tick covers it.
+
+### 3.2 Three ways this gate can quietly stop working
+
+Each is the pattern in §2.2, one layer up in the infrastructure.
+
+- **A required check is matched by job name.** Rename a job and the requirement
+  silently stops applying — the rule does not fail, it matches nothing. When you
+  rename a job, update the ruleset in the same change.
+- **A new workflow is not required by default.** Adding CI to a repository does
+  not add it to the ruleset. A repository can gain a suite that never gates a
+  merge, which is exactly the shape of a check nobody is running.
+- **A path-filtered workflow never reports on an unrelated PR.** Requiring one
+  blocks every merge that does not touch its paths, forever. No kindspec
+  workflow is path-filtered today; keep it that way, or do not require it.
+
+**Verify a rule by watching it reject, not by reading its configuration.**
+`git push --dry-run` does not evaluate server-side rules and will report success
+against a branch that would reject the real push. `gh api repos/OWNER/REPO/rules/branches/main`
+lists what actually applies.
+
 Large or load-bearing changes take **more than one review pass**. A change to
 the runner, the mutation gate, the case-tree format, or anything a published
 release depends on is load-bearing by definition.
