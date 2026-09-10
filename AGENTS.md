@@ -134,7 +134,15 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   `conformance` context unreported, and makes that pull request unmergeable —
   by anyone, with no bypass. **The ruleset must be edited before the rename
   lands, not in the same change**, because the change that renames the job is
-  itself the change that cannot merge.
+  itself the change that cannot merge. A ruleset is a setting rather than
+  repository content, so it can be changed without a pull request; that is what
+  makes "edit it first" possible instead of circular. Swap it immediately before
+  merging the rename — other open branches still produce the old name and will
+  sit at *Expected* until they take the rename, which `strict` makes them do
+  anyway. Do **not** require both names during the transition: old branches then
+  miss the new context and new branches miss the old one, so everything blocks.
+  And do not drop the requirement and re-add it, which leaves an interval where
+  nothing is required at all.
 - **A new workflow is not required by default.** Adding CI to a repository does
   not add it to the ruleset. A repository can gain a suite that never gates a
   merge, which is exactly the shape of a check nobody is running.
@@ -144,8 +152,21 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success
-against a branch that would reject the real push. `gh api repos/OWNER/REPO/rules/branches/main`
-lists what actually applies.
+against a branch that would reject the real push.
+
+Reading the configuration back is not verification either, so do not stop at
+`gh api repos/OWNER/REPO/rules/branches/main` — that returns what is configured,
+which is the thing the sentence above says not to trust. GitHub keeps a
+retrospective log of real push evaluations:
+
+    gh api repos/OWNER/REPO/rulesets/rule-suites
+    gh api repos/OWNER/REPO/rulesets/rule-suites/<id>
+
+The first lists actual attempts with `pass`/`fail`; the second names which rule
+failed and why. Every ruleset in this org was confirmed by pushing to `main`,
+watching it be rejected, and finding the `fail` recorded there — including the
+one repository whose ruleset was correct but had never been exercised, which is
+a distinction this section exists to refuse.
 
 Large or load-bearing changes take **more than one review pass**. A change to
 the runner, the mutation gate, the case-tree format, or anything a published
