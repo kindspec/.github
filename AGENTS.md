@@ -173,8 +173,16 @@ retrospective log of real push evaluations:
 
 The first lists actual attempts with `pass`/`fail`; the second names which rule
 failed and why. Three rulesets — `.github`, `rowspec` and `nodespec` — were
-confirmed that way: a push to `main` was rejected and the `fail` is recorded
-there. The other three — `research`, `kindkit` and `blockspec` — carry the same
+confirmed that way: a push to `main` was rejected and the `fail` was recorded
+there, as these rule suites:
+
+    repo        rule-suite id   pushed_at
+    .github     4014197203      2026-09-10T00:19:14-04:00
+    rowspec     4014189520      2026-09-10T00:18:20-04:00
+    nodespec    4014318589      2026-09-10T00:34:02-04:00
+
+While the log still holds them, `gh api
+repos/kindspec/<repo>/rulesets/rule-suites/<id>` shows each one. The other three — `research`, `kindkit` and `blockspec` — carry the same
 rules (plus `kindkit`'s required check) but have **no recorded rejection**, so
 by this section's own standard they are configured, not verified. A ruleset
 that is correct but has never been exercised is exactly the distinction this
@@ -183,7 +191,9 @@ record. Check with:
 
     gh api 'repos/kindspec/<repo>/rulesets/rule-suites?rule_suite_result=fail&time_period=month'
 
-The log reaches back a month at most, so an older rejection drops out of it.
+The log reaches back a month at most, so an older rejection drops out of it —
+which is why the ids above are written down. Record a new rejection the same
+way.
 
 Large or load-bearing changes take **more than one review pass**. A change to
 the runner, the mutation gate, the case-tree format, or anything a published
