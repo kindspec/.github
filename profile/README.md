@@ -35,13 +35,15 @@ every one of them.
 
 | | unit | identity | status |
 |---|---|---|---|
-| **rowspec** | rows | opaque row ids | draft 0, implemented |
-| **blockspec** | blocks | deliberately no minted ids | **not started** |
-| **nodespec** | nodes | named, not positional | **not started** |
+| **[rowspec](https://github.com/kindspec/rowspec)** | rows | opaque row ids | draft 0, [on PyPI](https://pypi.org/project/rowspec/) |
+| **[blockspec](https://github.com/kindspec/blockspec)** | blocks | deliberately no minted ids | design pass — spike, **no verdict** |
+| **[nodespec](https://github.com/kindspec/nodespec)** | nodes | named, not positional | **not started** |
 
-Only rowspec exists. The other two are a named intention and a settled
-identity decision, not a draft — there is no specification for either, and
-saying so is cheaper than being asked.
+Only rowspec has a specification. blockspec has a pre-registered spike — its
+criterion for "found" committed before the experiment, its harness validated —
+and no verdict yet on whether prose needs a format at all. nodespec is a named
+intention and a settled identity decision. Neither has a draft, and saying so is
+cheaper than being asked.
 
 Two repositories support all three:
 
@@ -77,8 +79,8 @@ recent pass the two halves were commissioned in parallel and could not see each
 other — the independent author's cases killed 7 of 8 mutants written blind, and
 found a live defect that returned a plausible number in every row.
 
-**A check that cannot fail must never report a pass.** This project has now
-reproduced that failure ten times in its own tooling: a runner that walked an
+**A check that cannot fail must never report a pass.** This project keeps
+reproducing that failure in its own tooling: a runner that walked an
 empty directory and printed `0 failures` over 226 unopened cases, a mutation
 gate that disarmed itself on a reformat, a canonicaliser that scored 129/131
 while being the identity function, a differential harness whose injected defect
