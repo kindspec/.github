@@ -77,6 +77,63 @@ MUTANTS = [
     ),
     ("exit always 0", "    return 1 if findings else 2 if incomplete else 0", "    return 0"),
     ("incomplete exits 0", "else 2 if incomplete else 0", "else 0"),
+    ("glob ?+[] accepted", '    if re.search(r"[?+\\[\\]]", pattern):\n', "    if False:\n"),
+    (
+        "tab indentation accepted",
+        '        if "\\t" in line[: len(line) - len(line.lstrip())]:\n',
+        "        if False:\n",
+    ),
+    ("flow mapping accepted", '        if v.replace(" ", "") != "{}":\n', "        if False:\n"),
+    ("nested flow sequence accepted", 'or "[" in v[1:-1] or "{" in v[1:-1]', ""),
+    ("unexpected indentation accepted", "    if i != len(lines):\n", "    if False:\n"),
+    ("needs unknown job accepted", "        if n not in jobs:\n", "        if False:\n"),
+    ("needs unevaluated job accepted", "        if jobs[n][4]:\n", "        if False:\n"),
+    ("rules 404 accepted", "            if rules is None:\n", "            if False:\n"),
+    (
+        "workflow not a mapping accepted",
+        "    if not isinstance(workflow, dict):\n",
+        "    if False:\n",
+    ),
+    ("jobs not a mapping accepted", "    if not isinstance(jobs, dict):\n", "    if False:\n"),
+    (
+        "job not a mapping accepted",
+        "        if not isinstance(job, dict):\n",
+        "        if False:\n",
+    ),
+    (
+        "job without runs-on or uses accepted",
+        '        if "runs-on" not in job and "uses" not in job:\n',
+        "        if False:\n",
+    ),
+    ("block-scalar name accepted", '        elif context == "<block>":\n', "        elif False:\n"),
+    ("disabled workflow counted", '            if state != "active":\n', "            if False:\n"),
+    (
+        "missing workflow state accepted",
+        "            if state is None:\n",
+        "            if False:\n",
+    ),
+    (
+        "snapshot without states accepted",
+        '        if "workflow_state" not in data:\n',
+        "        if False:\n",
+    ),
+    (
+        "unreadable states accepted",
+        "            if not isinstance(runs, dict):\n",
+        "            if False:\n",
+    ),
+    (
+        "unlisted public accepted",
+        "if public is None or listed_public < public:",
+        "if public is None:",
+    ),
+    ("unknown private count accepted", "    elif private is None:\n", "    elif False:\n"),
+    ("unlisted private accepted", "    elif listed_private < private:\n", "    elif False:\n"),
+    (
+        "public-only claims a count",
+        "skipped = None if private is None else",
+        "skipped = 0 if private is None else",
+    ),
 ]
 
 

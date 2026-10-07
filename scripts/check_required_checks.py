@@ -8,8 +8,9 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                required check
   ORPHANED     a required check is a context no such job produces. A job that
                runs only on merge_group, pull_request_target (its check runs
-               attach to the base commit), push, or on pull requests to other
-               branches does not count: the context never reports on the PR head
+               attach to the base commit), push, on pull requests to other
+               branches, or in a workflow that is not `active` does not count:
+               the context never reports on the PR head
   TRIGGER      a required job's pull_request `types:` omit opened or synchronize,
                so it does not report on every pull request head
   CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
@@ -20,16 +21,19 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
-repositories read, an API or authentication failure, a repository whose rules
-cannot be read (rulesets on a private repository need a paid plan), a workflow
-the parser cannot read, or a matrix, reusable-workflow or expression-named job
-whose context names this script does not expand. A run that could not look
-must not report a pass.
+repositories read; an API or authentication failure; fewer repositories listed
+than the org reports, or a private count this token cannot read; a repository
+whose rules or workflow states cannot be read (rulesets on a private repository
+need a paid plan); a workflow the parser cannot read or GitHub would reject
+(a job with neither runs-on nor uses, a non-mapping job); or a matrix,
+reusable-workflow, expression- or block-named job whose context names this
+script does not expand. A run that could not look must not report a pass.
 
 Reads every repository in the org that the caller can see, through the `gh`
 CLI: workflow files on the default branch, the rules that apply to that branch
 (GET /repos/{o}/{r}/rules/branches/{b}) and classic branch protection.
---public-only skips private repositories and says how many it skipped.
+--public-only skips private repositories and says how many it skipped, or that
+it cannot tell when the token cannot see the org's private count.
 
     python3 scripts/check_required_checks.py [--org kindspec] [--public-only]
     python3 scripts/check_required_checks.py --save snap.json   # also write what was read
@@ -162,9 +166,7 @@ def _block(lines, i, indent):
             mapping[key], i = _block(lines, i, lines[i][0])
         else:
             mapping[key] = None
-    if i < len(lines) and lines[i][0] > indent:
-        raise Unsupported(f"unexpected indentation at {lines[i][1]!r}")
-    return mapping, i
+    return mapping, i  # a stray deeper line stops the parse; parse_yaml refuses it
 
 
 def parse_yaml(text):
@@ -211,6 +213,8 @@ def _branch_runs(config, branch):
 
 def pr_trigger(workflow, branch):
     """(how the workflow reaches a PR into branch, path-filtered, restricted types, why not)."""
+    if not isinstance(workflow, dict):
+        raise Unsupported(f"workflow is not a mapping: {type(workflow).__name__}")
     on = workflow.get("on")
     if isinstance(on, str):
         on = [on]
@@ -237,8 +241,14 @@ def pr_trigger(workflow, branch):
 
 def jobs_of(workflow):
     """Yield (job id, context, if, needs, unresolved reason)."""
-    for job_id, job in (workflow.get("jobs") or {}).items():
-        job = job or {}
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        raise Unsupported(f"'jobs' is not a mapping: {jobs!r}")
+    for job_id, job in jobs.items():
+        if not isinstance(job, dict):
+            raise Unsupported(f"job '{job_id}' is not a mapping: {job!r}")
+        if "runs-on" not in job and "uses" not in job:
+            raise Unsupported(f"job '{job_id}' has neither runs-on nor uses; GitHub rejects it")
         context = str(job.get("name", job_id))
         unresolved = None
         if "uses" in job:
@@ -247,6 +257,8 @@ def jobs_of(workflow):
             unresolved = "matrix job; contexts are expanded per combination"
         elif "${{" in context:
             unresolved = "name is an expression"
+        elif context == "<block>":
+            unresolved = "name is a block scalar"
         needs = job.get("needs") or []
         needs = needs if isinstance(needs, list) else [needs]
         yield job_id, context, "if" in job, [str(n) for n in needs], unresolved
@@ -281,6 +293,9 @@ def evaluate(snapshot, allow):
         if "default_branch" not in data:
             incomplete.append(f"{repo}: not evaluated: snapshot has no default_branch")
             continue
+        if "workflow_state" not in data:
+            incomplete.append(f"{repo}: not evaluated: snapshot has no workflow_state")
+            continue
         stats["repos"] += 1
         branch = data["default_branch"]
         required = {}
@@ -290,6 +305,11 @@ def evaluate(snapshot, allow):
         produced, elsewhere, blind = set(), {}, False
         for path, text in sorted(data["workflows"].items()):
             stats["workflows"] += 1
+            state = data["workflow_state"].get(path)
+            if state is None:
+                incomplete.append(f"{repo}: {path}: not evaluated: no workflow state")
+                blind = True
+                continue
             try:
                 workflow = parse_yaml(text)
                 runs, filtered, types, why = pr_trigger(workflow, branch)
@@ -298,6 +318,8 @@ def evaluate(snapshot, allow):
                 incomplete.append(f"{repo}: {path}: not evaluated: {e}")
                 blind = True
                 continue
+            if state != "active":
+                runs, why = False, f"workflow is {state}"
             if not runs:
                 for _, context, *_ in jobs.values():
                     if why:
@@ -389,11 +411,28 @@ def collect(org, public_only=False, api=gh):
     if not isinstance(repos, list):
         raise Unreadable(f"cannot list repositories of '{org}'")
     snapshot, skipped = {}, 0
+    org_info = api(f"orgs/{org}") or {}
+    listed_public = sum(1 for r in repos if not r["private"])
+    listed_private = len(repos) - listed_public
+    public, private = org_info.get("public_repos"), org_info.get("total_private_repos")
+    problems = []
+    if public is None or listed_public < public:
+        problems.append(f"listed {listed_public} public repositories; the org reports {public}")
+    if public_only:
+        skipped = None if private is None else max(private, listed_private)
+    elif private is None:
+        problems.append(
+            "this token cannot see the org's private repository count, so a private "
+            "repository may be missing unseen; use --public-only to check public ones"
+        )
+    elif listed_private < private:
+        problems.append(f"listed {listed_private} private repositories; the org reports {private}")
+    if problems:
+        snapshot["(org)"] = {"unreadable": "; ".join(problems)}
     for repo in repos:
         if repo["archived"]:
             continue
         if public_only and repo["private"]:
-            skipped += 1
             continue
         name, branch = repo["name"], repo["default_branch"]
         try:
@@ -403,6 +442,10 @@ def collect(org, public_only=False, api=gh):
                 if entry["type"] == "file" and entry["name"].endswith((".yml", ".yaml")):
                     blob = api(f"repos/{org}/{name}/contents/{entry['path']}?ref={branch}")
                     workflows[entry["path"]] = base64.b64decode(blob["content"]).decode()
+            runs = api(f"repos/{org}/{name}/actions/workflows?per_page=100")
+            if not isinstance(runs, dict):
+                raise Unreadable("cannot read workflow states")
+            state = {w["path"]: w["state"] for w in runs.get("workflows", [])}
             rules = api(f"repos/{org}/{name}/rules/branches/{branch}")
             if rules is None:
                 raise Unreadable(f"no rules endpoint for '{branch}'")
@@ -416,7 +459,12 @@ def collect(org, public_only=False, api=gh):
         except Unreadable as e:
             snapshot[name] = {"unreadable": str(e)}
             continue
-        snapshot[name] = {"workflows": workflows, "required": required, "default_branch": branch}
+        snapshot[name] = {
+            "workflows": workflows,
+            "required": required,
+            "default_branch": branch,
+            "workflow_state": state,
+        }
     return snapshot, skipped
 
 
@@ -425,7 +473,7 @@ def run_live(org, public_only, save=None):
     try:
         snapshot, skipped = collect(org, public_only)
     except Unreadable as e:
-        return [], [str(e)], {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}, 0
+        return [], [str(e)], {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}, None
     if save:
         with open(save, "w") as fh:
             json.dump(snapshot, fh, indent=1, sort_keys=True)
@@ -444,12 +492,14 @@ def _on(trigger):
 
 def _fake_api(responses):
     def api(path):
-        for prefix, value in responses.items():
-            if path.startswith(prefix):
-                if isinstance(value, Exception):
-                    raise value
-                return value
-        return None
+        base = path.split("?")[0]
+        keys = [k for k in responses if k == base] or sorted(
+            (k for k in responses if base.startswith(k)), key=len, reverse=True
+        )
+        value = responses[keys[0]] if keys else None
+        if isinstance(value, Exception):
+            raise value
+        return value
 
     return api
 
@@ -462,9 +512,17 @@ def selftest():
             return [f"CRASH {type(e).__name__}"], -1
         return [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc), exit_code(f, inc)
 
-    def repo(wf, required=_CHECK, more=None):
+    def repo(wf, required=_CHECK, more=None, state="active"):
         workflows = {"w.yml": wf, **(more or {})}
-        return {"r": {"workflows": workflows, "required": required, "default_branch": "main"}}
+        states = {path: state for path in workflows}
+        return {
+            "r": {
+                "workflows": workflows,
+                "required": required,
+                "default_branch": "main",
+                "workflow_state": states,
+            }
+        }
 
     def live(responses, public_only=False):
         try:
@@ -476,9 +534,7 @@ def selftest():
         got, code = run(snap)
         return got, code, skipped
 
-    tags = (
-        "on:\n  push:\n    tags: ['v*']\njobs:\n  gate:\n    steps:\n      - run: |\n          x\n"
-    )
+    tags = "on:\n  push:\n    tags: ['v*']\njobs:\n  gate:\n    runs-on: x\n    steps:\n      - run: |\n          x\n"
     extra = "  extra:\n    runs-on: x\n"
     inc2 = ["INCOMPLETE", "INCOMPLETE"]
     cases = [
@@ -627,7 +683,12 @@ def selftest():
             ["INCOMPLETE"],
             None,
         ),
-        ("unparseable is not passed", repo("on: &a [pull_request]\n"), inc2, None),
+        (
+            "unparseable is not passed",
+            repo("on: &a [pull_request]\njobs:\n  check:\n    runs-on: x\n"),
+            inc2,
+            None,
+        ),
         (
             "unreadable repository is not passed",
             {"r": {"unreadable": "HTTP 403"}},
@@ -635,6 +696,86 @@ def selftest():
             None,
         ),
         ("nothing read is not passed", {}, ["INCOMPLETE"], None),
+        ("glob ? is refused", repo(_on("  pull_request:\n    branches: ['ma?n']\n")), inc2, None),
+        (
+            "tab indentation is refused",
+            repo("on: [pull_request]\njobs:\n  check:\n    \truns-on: x\n"),
+            inc2,
+            None,
+        ),
+        (
+            "flow mapping is refused",
+            repo("on: {pull_request: x}\njobs:\n  check:\n    runs-on: x\n"),
+            inc2,
+            None,
+        ),
+        (
+            "nested flow sequence is refused",
+            repo("on: [pull_request, [x]]\njobs:\n  check:\n    runs-on: x\n"),
+            inc2,
+            None,
+        ),
+        (
+            "unexpected indentation is refused",
+            repo(_PR.format(job="check") + "      stray: y\n"),
+            inc2,
+            None,
+        ),
+        ("scalar job is refused", repo("on: [pull_request]\njobs:\n  check: x\n"), inc2, None),
+        (
+            "sequence job is refused",
+            repo("on: [pull_request]\njobs:\n  check: [runs-on]\n"),
+            inc2,
+            None,
+        ),
+        ("scalar jobs is refused", repo("on: [pull_request]\njobs: x\n"), inc2, None),
+        ("top-level sequence is refused", repo("- on: pull_request\n"), inc2, None),
+        (
+            "job without runs-on or uses is refused",
+            repo("on: [pull_request]\njobs:\n  check:\n    steps:\n      - run: x\n"),
+            inc2,
+            None,
+        ),
+        (
+            "block-scalar name is not passed",
+            repo(_PR.format(job="j") + "    name: >-\n      check\n"),
+            inc2,
+            None,
+        ),
+        (
+            "needs an unknown job",
+            repo(_PR.format(job="check") + "    needs: ghost\n"),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs an unevaluated job",
+            repo(
+                _PR.format(job="check") + "    needs: b\n  b:\n    runs-on: x\n"
+                "    strategy:\n      matrix:\n        v: [1]\n",
+                _CHECK + [{"context": "b"}],
+            ),
+            ["CONDITIONAL", "INCOMPLETE", "INCOMPLETE"],
+            None,
+        ),
+        (
+            "disabled workflow produces nothing",
+            repo(_PR.format(job="check"), state="disabled_manually"),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "workflow with no state is not passed",
+            {"r": {**repo(_PR.format(job="check"))["r"], "workflow_state": {}}},
+            inc2,
+            None,
+        ),
+        (
+            "snapshot without workflow states is not passed",
+            {"r": {"workflows": {}, "required": [], "default_branch": "main"}},
+            inc2,
+            None,
+        ),
         (
             "snapshot without a default branch is not passed",
             {"r": {"workflows": {}, "required": []}},
@@ -660,21 +801,88 @@ def selftest():
     pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
     priv = {"name": "q", "default_branch": "main", "archived": False, "private": True}
     forbidden = Unreadable("gh api ... failed: Upgrade to GitHub Pro (HTTP 403)")
-    got, code, _ = live({"orgs/": None})
-    report("unknown org", got, code, ["INCOMPLETE"], 2)
-    bp = {"protection": {"required_status_checks": {"checks": [{"context": "bp"}]}}}
-    got, code, _ = live({"orgs/": [pub], "repos/o/p/rules/": [], "repos/o/p/branches/": bp})
-    report("branch protection checks are read", got, code, ["ORPHANED"], 1)
-    got, code, _ = live({"orgs/": [priv], "repos/o/q/rules/": forbidden})
-    report("private repo without rulesets", got, code, inc2, 2)
-    got, code, skipped = live({"orgs/": [pub, priv], "repos/o/p/rules/": []}, public_only=True)
-    report(
-        f"--public-only skips and counts them ({skipped})",
-        got + ["?"] * (skipped != 1),
-        code,
-        [],
-        0,
-    )
+
+    def org(repos, public=None, private=None, **more):
+        public = sum(not r["private"] for r in repos) if public is None else public
+        base = {
+            "orgs/o/repos": repos,
+            "orgs/o": {"public_repos": public, "total_private_repos": private},
+            "repos/o/p/actions/workflows": {"workflows": []},
+            "repos/o/q/actions/workflows": {"workflows": []},
+            "repos/o/p/rules/": [],
+        }
+        return {**base, **more}
+
+    collection = [
+        ("unknown org", {"orgs/o/repos": None}, False, ["INCOMPLETE"], 2),
+        (
+            "branch protection checks are read",
+            org(
+                [pub],
+                private=0,
+                **{
+                    "repos/o/p/branches/": {
+                        "protection": {"required_status_checks": {"checks": [{"context": "bp"}]}}
+                    }
+                },
+            ),
+            False,
+            ["ORPHANED"],
+            1,
+        ),
+        (
+            "private repo without rulesets",
+            org([priv], private=1, **{"repos/o/q/rules/": forbidden}),
+            False,
+            inc2,
+            2,
+        ),
+        (
+            "rules endpoint 404 is not passed",
+            org([pub], private=0, **{"repos/o/p/rules/": None}),
+            False,
+            inc2,
+            2,
+        ),
+        (
+            "unreadable workflow states are not passed",
+            org([pub], private=0, **{"repos/o/p/actions/workflows": None}),
+            False,
+            inc2,
+            2,
+        ),
+        ("private count unavailable is not passed", org([pub]), False, ["INCOMPLETE"], 2),
+        (
+            "unlisted private repository is not passed",
+            org([pub], private=1),
+            False,
+            ["INCOMPLETE"],
+            2,
+        ),
+        (
+            "unlisted public repository is not passed",
+            org([pub], public=2, private=0),
+            False,
+            ["INCOMPLETE"],
+            2,
+        ),
+        (
+            "all listed is clean",
+            org([pub, priv], private=1, **{"repos/o/q/rules/": []}),
+            False,
+            [],
+            0,
+        ),
+    ]
+    for label, responses, public_only, want, want_code in collection:
+        got, code, _ = live(responses, public_only)
+        report(label, got, code, want, want_code)
+    for label, private, want_skipped in (
+        ("--public-only counts what it skips", 1, 1),
+        ("--public-only says when it cannot count", None, None),
+    ):
+        got, code, skipped = live(org([pub, priv], private=private), public_only=True)
+        report(f"{label} ({skipped})", got + ["?"] * (skipped != want_skipped), code, [], 0)
     global GH
     saved = GH
     try:
@@ -697,7 +905,7 @@ def selftest():
             report(label, ["INCOMPLETE"] * len(inc) + f, exit_code(f, inc), ["INCOMPLETE"], 2)
     finally:
         GH = saved
-    total = len(cases) + 6
+    total = len(cases) + len(collection) + 4
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 
@@ -722,8 +930,9 @@ def main():
         print(line)
     for line in incomplete:
         print(f"INCOMPLETE   {line}")
-    if skipped:
-        print(f"{skipped} private repositories skipped (--public-only)")
+    if args.public_only and not args.load:
+        count = "an unknown number of" if skipped is None else str(skipped)
+        print(f"{count} private repositories skipped (--public-only)")
     print(
         f"{stats['repos']} repositories, {stats['workflows']} workflows, "
         f"{stats['pr_jobs']} pull_request jobs, {stats['required']} required checks: "
