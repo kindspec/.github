@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Render the kindspec mark to profile/assets/kindspec-logo.png."""
 
 from pathlib import Path

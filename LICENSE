@@ -1,0 +1,20 @@
+kindspec/.github is licensed per directory. This is deliberate, not an oversight.
+
+  scripts/                  MIT
+  everything else           CC-BY-4.0
+
+"Everything else" is the documents: AGENTS.md, STATE.md, README.md, profile/
+(including the org mark in profile/assets/), the issue forms in
+.github/ISSUE_TEMPLATE/, and configuration such as .gitignore. This file is part
+of it. The licence texts in LICENSES/ are not: each is published under its own
+terms by its steward.
+
+Full texts are in LICENSES/. Source files carry SPDX headers.
+
+WHY THE SPLIT
+
+Prose under CC-BY-4.0, so the contract can be copied and adapted with
+attribution; code under MIT. The contract is meant to be reused — a rule other
+projects can lift is worth more than one they have to rewrite. Each kindspec
+repository states its own split in its own LICENSE; this one describes this
+repository only.
