@@ -70,7 +70,7 @@ The second implementation (`reference/rowspec_alt/`) is the load-bearing one —
 written from `SPEC.md` alone, run against the same fixture tree in CI, and right
 on the last three questions where the two disagreed.
 
-### kindkit — complete, and proven against a real consumer
+### kindkit — in use by rowspec; kindkit#4 is the open v0 item
 
     99 mutations, 99 caught, 0 survived, 0 broken    just mutants   (throwaway clone)
     145 passed                                        just test   (1 skips without node)
@@ -161,9 +161,11 @@ implementation. Its brief names three concrete
 to a renamed node, and two branches adding different nodes with the same name —
 and calls the third the most likely home of a genuine silent-wrong merge.
 
-### .github — the org contract and this file
+### .github — the org contract, this file, and the org page
 
-### Security settings, org-wide
+`AGENTS.md`, `STATE.md` and `profile/README.md`. No workflows of its own.
+
+#### Security settings, org-wide
 
 **Secret scanning and push protection are on for all six repositories**, and
 the org enables both by default for new ones (`gh api repos/kindspec/<repo>
@@ -204,21 +206,25 @@ In order:
    **21 to 25** and the only legal-text coverage. Read §5.1 for why that last
    one is a range and not a number.
 
-   **It is not ready to run as-is.** Two things stand in the way, both recorded
-   in blockspec's own `spike/README.md` and `spike/LOG.md`:
-   - Those corpora are the repeated single-line-block shape on which the oracle
-     is confidently wrong (`LOG.md` §6.2, `spike/harness/oracle_limitation.py`),
-     so the arm needs a superseding oracle statement before its prose numbers
-     can be believed.
-   - The spike's strongest finding — a silent-wrong reproduced by one author in
-     one commit, with no merge (`LOG.md` §9) — falls outside the frozen FOUND
-     criteria, which require a stock `git merge` to create the defect
-     (`PRE-REGISTRATION.md` §3, conditions 1 and 5).
-
    **Open, for the owner to decide**: write a superseding pre-registration
-   first (and a superseding oracle statement with it), or run #2 under the
-   current pre-registration as it stands. Both blockspec documents record this
-   as undecided; nothing here decides it either.
+   before running it, or run #2 under the current one as it stands.
+   blockspec's `spike/LOG.md` §11 records this as open and "decides neither
+   way"; nothing here decides it either. Considerations on both sides, as
+   blockspec#2 lists them:
+   - **For an oracle change:** `spike/README.md` and `LOG.md` §6.2 say the
+     arm "needs a superseding oracle statement before its prose numbers can be
+     believed" — the oracle (TLLC) is confident on repeated single-line blocks
+     where the truth is undecidable (`spike/harness/oracle_limitation.py`).
+     Whether the three named corpora actually have that shape has not been
+     measured.
+   - **Against needing a new pre-registration for that:**
+     `PRE-REGISTRATION.md` §3.1 has the experiment construct and name its own
+     oracle before running, and §8 requires superseding only for changes to
+     §3, §4 or §6.
+   - **For superseding:** `LOG.md` §9's shape — one author, one commit, no
+     merge — falls outside the FOUND criteria, because §3(5) requires the
+     defect to be created by the merge. Making that shape count means changing
+     §3, which only a superseding pre-registration can do.
 2. **Tier the candidates, blind** — 16 cases, 85 records (§1). Needs someone
    who has not seen the frequencies, per §4.1.
 3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
@@ -316,15 +322,20 @@ reaching for `just`. A read-only cache makes every `uv run` recipe fail with
 or kindkit — which reads as a broken repository and is not one.
 
 **rowspec's "1 skipped" depends on `openpyxl` being absent**, not on a flag:
-`tests/test_xlsx_export.py:31` skips without it. Install the `xlsx` extra — which
-a required CI check does — and the number changes, with nothing in §1 to explain
-why. It is an environment fact wearing a figure's clothes.
+`tests/test_xlsx_export.py:31` skips without it. `just test` runs `uv run
+--exact`, which removes `openpyxl` even if you installed the extra, so its
+figure does not move. The skip changes only where pytest runs with the extra
+present — `just test-xlsx`, or CI's required `xlsx-extra` job — and a bare
+`./.venv/bin/python -m pytest` in a venv that has the extra changes it too,
+with nothing in §1 to explain why. It is an environment fact wearing a figure's
+clothes.
 
 **The suites themselves are unaffected**, once a `.venv` exists: call
 `./.venv/bin/...` directly and every figure in §1 reproduces. The blocked thing
 is the `uv` entry point, not the code — but note that `uv sync` *is* that entry
 point, so a sandboxed session cannot create the `.venv` it then needs. Sync
-first, from a session that can, and the suites run from anywhere afterwards. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
+first, from a session that can, and the suites run from anywhere afterwards.
+Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
 cache in a sandboxed session cannot populate itself, and it hides the fault from
 the next session. blockspec's harness needs none of this: pure stdlib, `python3`
 directly.
@@ -386,8 +397,8 @@ it, because the file did change. kindkit's purge now clears both the default
 (kindkit#14). If you set that variable, make it **absolute** — `$(mktemp -d)`
 is. A relative prefix resolves against each process's working directory, so a
 probe subprocess running elsewhere caches where the purge does not look, and
-nothing says so (kindkit#11, open). The loud symptom is a false SURVIVED; the quiet one is a
-false *caught*.
+nothing says so (kindkit#11, open). The loud symptom is a false SURVIVED; the
+quiet one is a false *caught*.
 
 **`awk $5` on the uniqueness output is magnitude-dependent.** Under `{:4.1f}` a
 one-digit percentage is padded to `" 0.6"`, so `( 0.6%)` splits into two tokens
@@ -409,15 +420,21 @@ installed code, use a private cache and copies:
 `UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy uv sync`. That is a different
 case from §3's sandbox note, which is about a cache you cannot write at all.
 
-**`gh pr edit` fails on these repositories** with a GraphQL error about
-Projects (classic). Edit a pull request's body through the REST API instead:
+**`gh pr edit` fails with the gh 2.46.0 on this machine** with a GraphQL error
+about Projects (classic) — a property of that gh version, not of the
+repositories. Edit a pull request's body through the REST API instead:
 `gh api -X PATCH repos/kindspec/<repo>/pulls/<n> -F body=@file`.
 
-**A closing keyword in any branch commit closes the issue**, even when the PR
-body says `Refs`. The squash commit carries only the PR body (see above), but
-GitHub reads the branch's commits as well: kindkit#14's first commit said
-`Closes #11`, and merging it closed kindkit#11, which had to be reopened. Use
-`Refs` in commit messages for anything the PR does not finish.
+**GitHub matches a closing keyword even when the sentence negates it.**
+kindkit#14's body — which became its squash commit — has the heading
+`## Not done: why this does not close #11`, and merging it closed kindkit#11,
+which had to be reopened. GitHub lists #11 among that PR's closing references
+(`gh api graphql -f query='{repository(owner:"kindspec",name:"kindkit"){pullRequest(number:14){closingIssuesReferences(first:10){nodes{number}}}}}'`).
+Never write `close`, `closes`, `fix`, `fixes`, `resolve` or `resolves`
+followed by `#N` in a PR body or a commit message unless that issue should
+close — not even negated: "does not resolve #N" contains `resolve #N` and
+matches. Keep the keyword away from the number, as in `Refs #N (not finished
+here)`.
 
 ---
 
@@ -463,6 +480,7 @@ and these two had, at ten against twelve:
 - `openpyxl` collapsing an empty-text cell and an absent cell to the same read,
   making the obvious assertion vacuous
 - a balance check defined as the difference it then asserted
+- a differential harness whose injected defect silently stopped applying
 - a guard whose denominator was subject to the control flow it measured
 - a positional parse that was correct for some rows and wrong for others
 - two required action checks installing the published wheel, so no regression
