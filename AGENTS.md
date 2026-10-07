@@ -155,6 +155,9 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
 - **A new workflow is not required by default.** Adding CI to a repository does
   not add it to the ruleset. A repository can gain a suite that never gates a
   merge, which is exactly the shape of a check nobody is running.
+  `python3 scripts/check_required_checks.py` (in this repository) compares every
+  pull_request job against the required checks, in both directions, and fails
+  on a gap; nothing runs it on a schedule yet (kindspec/.github#3).
 - **A path-filtered workflow never reports on an unrelated PR.** Requiring one
   blocks every merge that does not touch its paths, forever. No kindspec
   workflow is path-filtered today; keep it that way, or do not require it.
