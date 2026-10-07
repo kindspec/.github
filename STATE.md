@@ -159,9 +159,9 @@ In order:
    argues the rowspec thesis does not transfer to canvases at all, and that a
    finding of "do not build this" is a legitimate outcome there too.
 
-Thirty-one issues are open, each with acceptance criteria and a red-before-green
-requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#41`, `#43`,
-`#48`, `#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
+Twenty-eight issues are open, each with acceptance criteria and a red-before-green
+requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#43`, `#48`,
+`#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
 gate defects and are **closed** — the kindkit adoption fixed both.
 
 ---
