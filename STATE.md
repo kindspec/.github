@@ -1,6 +1,6 @@
 # State of play
 
-Current as of **2026-10-06**. Read `AGENTS.md` first — it is the contract. This
+Current as of **2026-10-07**. Read `AGENTS.md` first — it is the contract. This
 file is where the work actually stands, what comes next, and the traps that have
 already cost time.
 
@@ -18,7 +18,7 @@ reproduced from this checkout alone, that is said.
     0 failures, second impl        just conform-alt
     74 killed, 0 survived          just mutants
     2 equivalent, 0 stale, 0 broken
-    52 passed, 1 skipped           just test
+    52 passed, 1 skipped           just test   (skip is openpyxl absent)
     294 files clean                just check
 
 **All of these reproduce on 2026-10-06.** They were produced by calling the
@@ -56,11 +56,12 @@ on the last three questions where the two disagreed.
 ### kindkit — complete, and proven against a real consumer
 
     73 mutations, 73 caught, 0 survived, 0 broken    just mutants
-    109 passed                                        just test
+    109 passed                                        just test   (1 skips without node)
     20 files clean                                    just check
     6 cases in its own kv tree                        just cases
 
-All of these reproduce on 2026-10-06, run from `.venv` rather than through
+All of these reproduce on 2026-10-06, run from `.venv` (see §3 — `uv sync`
+creates it; it is not committed) rather than through
 `just`, by the same substitution as rowspec's.
 
 **96** test functions across **five** files collect as 109: 92 plain, three
@@ -85,9 +86,9 @@ reference implementation is not Python gets the runner and not the gate.
 
 ### blockspec — pre-registration frozen, harness validated, no verdict
 
-    SELECTION-GUARD SELFTEST: PASS      python3 harness/prose_merge.py --selftest-selection
-    SELFTEST: PASS                      python3 harness/check_control_gate.py --selftest
-    PLANTED-CASE GATE: PASS             python3 harness/prose_merge.py --plant --d8-dir <research>/experiments/D8-identity
+    SELECTION-GUARD SELFTEST: PASS      python3 spike/harness/prose_merge.py --selftest-selection
+    SELFTEST: PASS                      python3 spike/harness/check_control_gate.py --selftest
+    PLANTED-CASE GATE: PASS             python3 spike/harness/prose_merge.py --plant --d8-dir <research>/experiments/D8-identity
 
 Verified green on 2026-10-06. The harness is **pure stdlib, run with `python3`
 directly** — no `uv`, no justfile, so it works where the other two repos need a
@@ -138,12 +139,13 @@ earn a format is the likelier draft 0, and it is a result rather than a failure.
 In order:
 
 1. **blockspec#2 — run the duplicate-heavy arm.** The corpora are named and
-   pinned in `spike/PRE-REGISTRATION.md` §5.1, which arrives with blockspec#11 —
-   check that it has merged before relying on the reference. Ranked by evaluable
+   pinned in `spike/PRE-REGISTRATION.md` §5.1. Ranked by evaluable
    human-authored cases: `kubernetes/website` is the largest arm at roughly 800
-   extrapolated from a 400-merge sample, `cncf/toc` the cleanest at 71 with no
-   bot involvement, `github/site-policy` a supporting arm at about 29 and the
-   only legal-text coverage. Nothing blocks this.
+   — an **upper** estimate extrapolated from the most recent 400 of 23,473
+   merges, so enumerate before quoting it; `cncf/toc` the cleanest at 71 with no
+   bot involvement at all; `github/site-policy` a supporting arm at **21 to 25**
+   and the only legal-text coverage. Read §5.1 for why that last one is a range
+   and not a number. Nothing blocks this.
 2. **Tier the 85 candidates, blind.** Needs someone who has not seen the
    frequencies, per §4.1.
 3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
@@ -157,9 +159,9 @@ In order:
    argues the rowspec thesis does not transfer to canvases at all, and that a
    finding of "do not build this" is a legitimate outcome there too.
 
-Thirty issues are open, each with acceptance criteria and a red-before-green
-requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#41`, `#43`,
-`#48`, `#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
+Twenty-eight issues are open, each with acceptance criteria and a red-before-green
+requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#43`, `#48`,
+`#49`, `#47` and `kindkit#3`, `#4`, `#8` through `#12` — check the repos' own gate labels rather than trusting this list. `rowspec#44` and `#45` were also
 gate defects and are **closed** — the kindkit adoption fixed both.
 
 ---
@@ -167,8 +169,20 @@ gate defects and are **closed** — the kindkit adoption fixed both.
 ## 3. Setting up on a fresh machine
 
 **Toolchain.** `git`, `just`, `python3` 3.11+, `uv` for rowspec and kindkit,
-`ruff` and `pytest` through `uv`. A real `git` binary is a hard dependency of
-every conformance suite, because the central claim is about what stock git does.
+`ruff` and `pytest` through `uv`, and `pre-commit` — both repositories carry a
+`.pre-commit-config.yaml` and all work lands by PR. A real `git` binary is a hard
+dependency of every conformance suite, because the central claim is about what
+stock git does.
+
+**The three blockspec commands run from `blockspec/`**, and `uv sync` needs
+network reach to `github.com` — `rowspec/pyproject.toml` has `kindkit` as a git
+dependency in its dev group, so an offline sync fails there.
+
+**First command in rowspec and kindkit is `uv sync`** (or `just setup`, which is
+that one line). It creates `.venv`, which is **gitignored and not committed** —
+every command in §1 calls `./.venv/bin/...` and none of them work until it
+exists. Run it somewhere `~/.cache/uv` is writable; see the sandbox note at the
+end of this section for why that is not always where you are.
 
 **`node` is required by kindkit's test suite**, not optionally: the case-tree
 validator translates Python regex semantics to ECMA-262 and the differential test
@@ -176,34 +190,44 @@ checks the translation against a real engine. Without `node` on `PATH` that test
 skips, and a mutation exists specifically so a skip fails the gate rather than
 passing quietly. Nothing else needs it.
 
-**Corpora.** Clone these at the pins; they live outside the repositories and are
-gitignored:
+**Corpora.** They live outside the repositories and are gitignored. **Clone the
+pins in `research/design-findings/D8-identity.md` §3. They produce all four
+committed artifacts, byte for byte.**
 
-| corpus | source | pin |
+| corpus | pin | source |
 |---|---|---|
-| `rust-book` | `github.com/rust-lang/book` | `1500248d8f230566e4ec9f27fcbb8fe9e2898ab1` |
-| `obsidian-help` | `github.com/obsidianmd/obsidian-help` | `327a782e90481268361b5ccccdb0c224b2b13fe6` |
-| `commonmark-spec` | `github.com/commonmark/commonmark-spec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` |
+| `rust-book` | `1500248d8f230566e4ec9f27fcbb8fe9e2898ab1` | `github.com/rust-lang/book` |
+| `obsidian-help` | `327a782e90481268361b5ccccdb0c224b2b13fe6` | `github.com/obsidianmd/obsidian-help` |
+| `cmspec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` | `github.com/commonmark/commonmark-spec` |
+
+Verified: `anchor_eval3.py` is byte-identical to `results-anchor3.txt` at these
+trees, and `e4_uniqueness.py` at 20, 40 and 120 to `results-e4.txt`.
+
+**`blockspec/spike/harness/corpora.json` pins different commits on purpose, and
+they are not an alternative set to reproduce research with.** It pins
+`obsidian-help` at `a3985b58` and `rust-book` at `917544888a55` to reconstruct
+an *earlier, uncommitted* pass — chosen by matching the commit counts in D8 §1's
+header, which describe that earlier clone. Its control arm therefore prints
+`anchors=384` where `results-anchor3.txt` prints `343`, and both are right about
+their own tree. D8 §3.2 states this directly: *"The 384 line belongs to
+`a3985b58` alone."* Use `a3985b58` only when running blockspec's control arm.
+
+**Name the directories `rust-book`, `obsidian-help` and `cmspec`.**
+`e4_uniqueness.py:12` and `anchor_eval3.py:87` hardcode those paths under
+`corpora/`, **relative to the process working directory** — so invoke them from
+that parent directory by absolute script path. Get either wrong and
+`e4_uniqueness.py` prints `files=0  blocks>=40ch=0`, an empty table, **and exits
+0** — §2.2's own named failure, in this project's own script.
+
+`run_control.sh` takes `CORPORA` and `D8_DIR` as **environment variables**, not
+flags. `--d8-dir` is `prose_merge.py`'s flag.
 
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
 
-**blockspec's control arm pins two of these differently, and that is deliberate
-rather than a mistake to correct.** Its harness records its own pins in
-`spike/harness/corpora.json`, not in §5.1:
-
-| corpus | research §3 | blockspec harness |
-|---|---|---|
-| `rust-book` | `1500248d` | `917544888a55e4da7109bdba8c88c893c0da70f4` |
-| `obsidian-help` | `327a782e` | `a3985b585904ddb9f109bd80849b378085308c15` |
-| `commonmark-spec` | `3da93942` | same |
-
-A fresh machine that checks the table above out at research's pins and then runs
-blockspec's control gate is measuring different trees from the ones that gate was
-written against, and the harness prints its pin without ever comparing it to
-`corpora.json`, so the mismatch is silent. Read `corpora.json` before running the
-control arm. §5.1 of the pre-registration lists only the three duplicate-heavy
-corpora, with their own pins.
+**blockspec#2 needs three further corpora** — `kubernetes/website`, `cncf/toc`
+and `github/site-policy` — pinned in `blockspec/spike/PRE-REGISTRATION.md` §5.1
+and in no `research` file, `CORPORA.md` included.
 
 `research/CORPORA.md` lists everything the findings cite, including the benchmark
 archives the differential used.
@@ -213,9 +237,16 @@ reaching for `just`. A read-only cache makes every `uv run` recipe fail with
 `OSError 30` *before the recipe body runs*, so no `just` target works in rowspec
 or kindkit — which reads as a broken repository and is not one.
 
-**The suites themselves are unaffected.** Call the committed `.venv` directly and
-every figure in §1 reproduces; the blocked thing is the `uv` entry point, not the
-code. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
+**rowspec's "1 skipped" depends on `openpyxl` being absent**, not on a flag:
+`tests/test_xlsx_export.py:31` skips without it. Install the `xlsx` extra — which
+a required CI check does — and the number changes, with nothing in §1 to explain
+why. It is an environment fact wearing a figure's clothes.
+
+**The suites themselves are unaffected**, once a `.venv` exists: call
+`./.venv/bin/...` directly and every figure in §1 reproduces. The blocked thing
+is the `uv` entry point, not the code — but note that `uv sync` *is* that entry
+point, so a sandboxed session cannot create the `.venv` it then needs. Sync
+first, from a session that can, and the suites run from anywhere afterwards. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
 cache in a sandboxed session cannot populate itself, and it hides the fault from
 the next session. blockspec's harness needs none of this: pure stdlib, `python3`
 directly.
@@ -224,42 +255,34 @@ directly.
 
 ## 4. Traps that have already cost time
 
-**"Pin" means two different trees, for two of the three control corpora — and
-blockspec's are the ones that reproduce D8.** research §3 pins `obsidian-help` at
-`327a782e`; blockspec's harness pins it at `a3985b58`, seven first-parent commits
-behind, and its own config calls that "D8's pin". The same arm gives
-`anchors=343` at one and `384` at the other. That one has been corrected in three
-separate places.
+**`anchors=384` and `anchors=343` are the same arm on two different trees, and
+the committed artifact is 343.** `results-anchor3.txt:12` prints 343, produced at
+research §3's pins. `384` comes from `obsidian-help` at `a3985b58`, which is
+blockspec's reconstruction of an earlier uncommitted pass. D8 §3.2 says it in as
+many words — *"The 384 line belongs to `a3985b58` alone"* — and
+`blockspec/spike/results/corpus-drift.txt` tabulates both. **Always name the SHA
+and say which artifact you are reproducing.**
 
-`rust-book` diverges too and nobody noticed, because every correction was about
-`obsidian-help`: research §3 says `1500248d`, the harness says `917544888a55`,
-and the second is the direct **parent** of the first — one commit, and no figure
-has yet been shown to move for it.
+**Do not use `git rev-list --count` to decide which pin is right.** D8 §1's
+header states 6,286 / 2,623 / 1,848 and those counts match `a3985b58` and
+`917544888a55` — the *earlier* clone, not the one §3 pins and not the one the
+committed artifacts came from. The header and the pin block describe different
+trees, which is all kindspec/research#9 is about.
 
-**The harness is right and §3 is wrong on both.** `corpora.json` records how its
-pins were chosen: D8's own header states 6,286 / 2,623 / 1,848 commits per
-corpus, and the pin is the commit where `git rev-list --count` equals that.
-Measured:
+I got this wrong twice in one day, both times from that count. First I claimed
+§3's pins were wrong and filed research#9 asking for them to be replaced. Then,
+told that `results-e4.txt` only reproduces at §3's pin, I invented a "two clones
+a day apart" story that kept the counts meaningful and assigned the anchor files
+to `a3985b58` — which the commit dates refute outright (`a3985b58` is
+2026-08-25; a clone made in September gets `327a782e`). Both versions of
+research#9's acceptance would have written a false claim into the research repo,
+the second into a file that was already correct.
 
-    corpus            D8 header   research §3        harness
-    rust-book             6,286   1500248d  6287     917544888a55  6286
-    obsidian-help         2,623   327a782e  2630     a3985b58      2623
-    commonmark-spec       1,848   3da93942  1848     3da93942      1848
-
-`commonmark-spec` agrees only because both files name the same commit. So §3 is
-one commit ahead on `rust-book` and **seven** ahead on `obsidian-help` — and the
-seven is the gap that produces `anchors=343` against `384`.
-
-**Which means `343` is a measurement of a tree D8 never ran on.** Three separate
-corrections reconciled that figure, and all three treated §3's pin as canonical
-and `a3985b58` as merely the local corpus cache. The counts say that premise was
-backwards. Research reaches the same conclusion from the other side without
-noticing it: `D8-identity.md` §3.2 records that `a3985b58` "reproduces the
-original arm exactly" and that "the original clone's commit was never recorded".
-It was recorded — as a count, in §1's header, and 2,623 is `a3985b58`.
-
-Read `spike/harness/corpora.json` before running the control arm. Tracked as
-kindspec/research#9. Always name the SHA.
+The lesson is not about pins. A check that returns the same answer whichever
+hypothesis is true cannot choose between them, and reading it as support for one
+is this project's recurring defect — here committed twice, in the document that
+catalogues it, by the person maintaining the catalogue. `diff` against the
+committed artifact is the check that discriminates; it took two commands.
 
 **A squash merge discards branch commit messages.** Every repository here has
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
@@ -320,8 +343,9 @@ for others. Parse with an anchored regex.
 
 Repeatedly, across mechanisms that look unrelated, a check reported a pass over
 something it had never evaluated. The list below is what has been recorded; it is
-deliberately not numbered, because `AGENTS.md` §2.2 carries its own count and two
-hand-maintained totals in one repository will diverge:
+the only counted list, because `AGENTS.md` §2.2 now points here rather than
+carrying its own total — two hand-maintained counts in one repository diverge,
+and these two had, at ten against twelve:
 
 - a mutation gate scoring any non-zero exit as a kill, so an unimportable module
   counted as caught with nothing run

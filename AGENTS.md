@@ -57,7 +57,8 @@ cases against must stop and say so rather than proceed carefully.
 
 ### 2.2 A check that cannot fail must never report a pass
 
-This project has now reproduced that failure ten times in its own tooling: a
+This project keeps reproducing that failure in its own tooling — `STATE.md` §6
+carries the running list, which is the only place it is counted. Examples: a
 runner that walked an empty directory and printed `0 failures` over 226 unopened
 cases; a mutation gate that disarmed itself on a reformat; a canonicaliser that
 scored 129/131 while being the identity function; a differential harness whose
