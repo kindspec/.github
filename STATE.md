@@ -1,6 +1,6 @@
 # State of play
 
-Current as of **2026-10-06**. Read `AGENTS.md` first — it is the contract. This
+Current as of **2026-10-07**. Read `AGENTS.md` first — it is the contract. This
 file is where the work actually stands, what comes next, and the traps that have
 already cost time.
 
@@ -18,7 +18,7 @@ reproduced from this checkout alone, that is said.
     0 failures, second impl        just conform-alt
     74 killed, 0 survived          just mutants
     2 equivalent, 0 stale, 0 broken
-    52 passed, 1 skipped           just test
+    52 passed, 1 skipped           just test   (skip is openpyxl absent)
     294 files clean                just check
 
 **All of these reproduce on 2026-10-06.** They were produced by calling the
@@ -60,7 +60,8 @@ on the last three questions where the two disagreed.
     20 files clean                                    just check
     6 cases in its own kv tree                        just cases
 
-All of these reproduce on 2026-10-06, run from `.venv` rather than through
+All of these reproduce on 2026-10-06, run from `.venv` (see §3 — `uv sync`
+creates it; it is not committed) rather than through
 `just`, by the same substitution as rowspec's.
 
 **96** test functions across **five** files collect as 109: 92 plain, three
@@ -158,7 +159,7 @@ In order:
    argues the rowspec thesis does not transfer to canvases at all, and that a
    finding of "do not build this" is a legitimate outcome there too.
 
-Thirty issues are open, each with acceptance criteria and a red-before-green
+Thirty-one issues are open, each with acceptance criteria and a red-before-green
 requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#41`, `#43`,
 `#48`, `#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
 gate defects and are **closed** — the kindkit adoption fixed both.
@@ -168,8 +169,16 @@ gate defects and are **closed** — the kindkit adoption fixed both.
 ## 3. Setting up on a fresh machine
 
 **Toolchain.** `git`, `just`, `python3` 3.11+, `uv` for rowspec and kindkit,
-`ruff` and `pytest` through `uv`. A real `git` binary is a hard dependency of
-every conformance suite, because the central claim is about what stock git does.
+`ruff` and `pytest` through `uv`, and `pre-commit` — both repositories carry a
+`.pre-commit-config.yaml` and all work lands by PR. A real `git` binary is a hard
+dependency of every conformance suite, because the central claim is about what
+stock git does.
+
+**First command in rowspec and kindkit is `uv sync`** (or `just setup`, which is
+that one line). It creates `.venv`, which is **gitignored and not committed** —
+every command in §1 calls `./.venv/bin/...` and none of them work until it
+exists. Run it somewhere `~/.cache/uv` is writable; see the sandbox note at the
+end of this section for why that is not always where you are.
 
 **`node` is required by kindkit's test suite**, not optionally: the case-tree
 validator translates Python regex semantics to ECMA-262 and the differential test
@@ -177,31 +186,49 @@ checks the translation against a real engine. Without `node` on `PATH` that test
 skips, and a mutation exists specifically so a skip fails the gate rather than
 passing quietly. Nothing else needs it.
 
-**Corpora.** They live outside the repositories and are gitignored. **Clone
-these pins, which are the ones D8's stated corpus sizes resolve to** — not the
-ones `research/design-findings/D8-identity.md` §3 records, which are wrong for
-two of the three and are tracked as kindspec/research#9:
+**Corpora.** They live outside the repositories and are gitignored. **D8 was run
+against two clones a day apart, and you need to know which arm you are
+reproducing before you pick a pin.** D8 §3 states the dates; it gives only the
+second clone's pins, which is kindspec/research#9.
 
-| corpus | source | pin | `rev-list --count` |
-|---|---|---|---|
-| `rust-book` | `github.com/rust-lang/book` | `917544888a55e4da7109bdba8c88c893c0da70f4` | 6286 |
-| `obsidian-help` | `github.com/obsidianmd/obsidian-help` | `a3985b585904ddb9f109bd80849b378085308c15` | 2623 |
-| `commonmark-spec` | `github.com/commonmark/commonmark-spec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` | 1848 |
+| clone | `rust-book` | `obsidian-help` | `cmspec` | reproduces |
+|---|---|---|---|---|
+| 2026-09-09 | `917544888a55` | `a3985b58` | `3da93942` | `results-anchor*.txt`, D8 §3.1/§3.2, and blockspec's control arm |
+| 2026-09-10 | `1500248d` | `327a782e` | `3da93942` | `results-e4.txt`, D8 §3.3 |
 
-The counts are in the table so you can check the pin rather than trust it. D8 §1
-states 6,286 / 2,623 / 1,848; these are the commits where `git rev-list --count`
-equals that. These are also what `blockspec/spike/harness/corpora.json` pins, and
-its control arm reproduces D8's arms line for line at them — which is the
-evidence that they are the trees D8 ran on. §4 has the full argument and
-research#9 the fix.
+Full SHAs: `917544888a55e4da7109bdba8c88c893c0da70f4`,
+`a3985b585904ddb9f109bd80849b378085308c15`,
+`1500248d8f230566e4ec9f27fcbb8fe9e2898ab1`,
+`327a782e90481268361b5ccccdb0c224b2b13fe6`,
+`3da939428d80f146f270cd1765e4ba462e96bb1b`. Sources are
+`github.com/rust-lang/book`, `github.com/obsidianmd/obsidian-help`,
+`github.com/commonmark/commonmark-spec`.
+
+Measured, so you can check a pin rather than trust it: `e4_uniqueness.py 40` on
+`obsidian-help` gives `files=176 prose=2526` at `327a782e`, matching
+`results-e4.txt` byte for byte, and `files=175 prose=2515` at `a3985b58`.
+`anchor_eval3.py` gives `anchors=384` at `a3985b58` and `343` at `327a782e`.
+**Neither pin is wrong — they are different clones, each correct for its own
+artifact.** §1's header sizes (6,286 / 2,623 / 1,848) describe the 09-09 clone,
+which is how blockspec's harness found it, and `rev-list --count` therefore
+cannot tell the two apart. The 09-09 set is what
+`blockspec/spike/harness/corpora.json` pins.
+
+**Name the directories `rust-book`, `obsidian-help` and `cmspec`** — not
+`commonmark-spec`. `e4_uniqueness.py:12` and `anchor_eval3.py` hardcode those
+relative paths under a `corpora/` directory. Get it wrong and
+`e4_uniqueness.py` prints `files=0  blocks>=40ch=0`, an empty table, **and exits
+0** — §2.2's own named failure, in this project's own script.
+
+`run_control.sh` takes `CORPORA` and `D8_DIR` as **environment variables**, not
+flags. `--d8-dir` is `prose_merge.py`'s flag and will not work on the former.
 
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
 
-**Do not take research §3's pins as canonical, and do not "fix" the harness to
-match them** — that is backwards, and it is the mistake three previous
-corrections made. §5.1 of the pre-registration lists the three duplicate-heavy
-corpora separately, with their own pins.
+**blockspec#2 needs three further corpora** — `kubernetes/website`, `cncf/toc`
+and `github/site-policy` — pinned in `blockspec/spike/PRE-REGISTRATION.md` §5.1
+and in no `research` file, `CORPORA.md` included.
 
 `research/CORPORA.md` lists everything the findings cite, including the benchmark
 archives the differential used.
@@ -211,9 +238,16 @@ reaching for `just`. A read-only cache makes every `uv run` recipe fail with
 `OSError 30` *before the recipe body runs*, so no `just` target works in rowspec
 or kindkit — which reads as a broken repository and is not one.
 
-**The suites themselves are unaffected.** Call the committed `.venv` directly and
-every figure in §1 reproduces; the blocked thing is the `uv` entry point, not the
-code. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
+**rowspec's "1 skipped" depends on `openpyxl` being absent**, not on a flag:
+`tests/test_xlsx_export.py:31` skips without it. Install the `xlsx` extra — which
+a required CI check does — and the number changes, with nothing in §1 to explain
+why. It is an environment fact wearing a figure's clothes.
+
+**The suites themselves are unaffected**, once a `.venv` exists: call
+`./.venv/bin/...` directly and every figure in §1 reproduces. The blocked thing
+is the `uv` entry point, not the code — but note that `uv sync` *is* that entry
+point, so a sandboxed session cannot create the `.venv` it then needs. Sync
+first, from a session that can, and the suites run from anywhere afterwards. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
 cache in a sandboxed session cannot populate itself, and it hides the fault from
 the next session. blockspec's harness needs none of this: pure stdlib, `python3`
 directly.
@@ -222,42 +256,39 @@ directly.
 
 ## 4. Traps that have already cost time
 
-**"Pin" means two different trees, for two of the three control corpora — and
-blockspec's are the ones that reproduce D8.** research §3 pins `obsidian-help` at
-`327a782e`; blockspec's harness pins it at `a3985b58`, seven first-parent commits
-behind, and its own config calls that "D8's pin". The same arm gives
-`anchors=343` at one and `384` at the other. That one has been corrected in three
-separate places.
+**"Pin" means two different trees, and both are right.** D8 was run against two
+clones a day apart — `results-anchor*.txt` on 2026-09-09, `results-e4.txt` on
+2026-09-10 — and D8 §3 says so, at `:253-255`, immediately above a pin block that
+gives only the second one. So research §3 pins `obsidian-help` at `327a782e` and
+blockspec's harness pins `a3985b58`, seven first-parent commits apart, and
+neither is a mistake:
 
-`rust-book` diverges too and nobody noticed, because every correction was about
-`obsidian-help`: research §3 says `1500248d`, the harness says `917544888a55`,
-and the second is the direct **parent** of the first — one commit, and no figure
-has yet been shown to move for it.
+    arm                            a3985b58        327a782e
+    anchor_eval3.py  anchors=      384  matches     343
+    e4_uniqueness.py 40  prose=    2515            2526  matches results-e4.txt
 
-**The harness is right and §3 is wrong on both.** `corpora.json` records how its
-pins were chosen: D8's own header states 6,286 / 2,623 / 1,848 commits per
-corpus, and the pin is the commit where `git rev-list --count` equals that.
-Measured:
+Each reproduces its own artifact exactly and the other's not at all. §3's defect
+is that one pin block is presented as the provenance for all four result files.
+Tracked as kindspec/research#9, which **does not change any pin** — it records
+both clones. §3 of this document has the table; read it before reproducing
+anything.
 
-    corpus            D8 header   research §3        harness
-    rust-book             6,286   1500248d  6287     917544888a55  6286
-    obsidian-help         2,623   327a782e  2630     a3985b58      2623
-    commonmark-spec       1,848   3da93942  1848     3da93942      1848
+**Do not settle this with `git rev-list --count`.** It looks decisive and is not.
+D8 §1's header states 6,286 / 2,623 / 1,848, and the counts at the harness pins
+equal those exactly — because §1's header describes the 09-09 clone. The count
+therefore matches the anchor clone whichever artifact you are chasing, so it
+cannot distinguish "the tree this arm ran on" from "the tree §1's header was
+written against". I read that match as proof that §3 was wrong on two pins,
+wrote it into this section, and filed research#9 asking for §3's pins to be
+replaced — whose first acceptance criterion would have repinned §3 to the 09-09
+clone and silently invalidated §3.3's 2,526 denominator, the evidence under
+blockspec's frozen §5 prose-identity decision. That issue's original criterion
+also said not to re-run the arms. Re-running them is what caught it, in two
+commands.
 
-`commonmark-spec` agrees only because both files name the same commit. So §3 is
-one commit ahead on `rust-book` and **seven** ahead on `obsidian-help` — and the
-seven is the gap that produces `anchors=343` against `384`.
-
-**Which means `343` is a measurement of a tree D8 never ran on.** Three separate
-corrections reconciled that figure, and all three treated §3's pin as canonical
-and `a3985b58` as merely the local corpus cache. The counts say that premise was
-backwards. Research reaches the same conclusion from the other side without
-noticing it: `D8-identity.md` §3.2 records that `a3985b58` "reproduces the
-original arm exactly" and that "the original clone's commit was never recorded".
-It was recorded — as a count, in §1's header, and 2,623 is `a3985b58`.
-
-Read `spike/harness/corpora.json` before running the control arm. Tracked as
-kindspec/research#9. Always name the SHA.
+Which is this project's own recurring defect, in the document that catalogues it:
+a check that returns the same answer in both cases, read as evidence for one.
+**Always name the SHA, and say which artifact you are reproducing.**
 
 **A squash merge discards branch commit messages.** Every repository here has
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
@@ -318,8 +349,9 @@ for others. Parse with an anchored regex.
 
 Repeatedly, across mechanisms that look unrelated, a check reported a pass over
 something it had never evaluated. The list below is what has been recorded; it is
-deliberately not numbered, because `AGENTS.md` §2.2 carries its own count and two
-hand-maintained totals in one repository will diverge:
+the only counted list, because `AGENTS.md` §2.2 now points here rather than
+carrying its own total — two hand-maintained counts in one repository diverge,
+and these two had, at ten against twelve:
 
 - a mutation gate scoring any non-zero exit as a kill, so an unimportable module
   counted as caught with nothing run
