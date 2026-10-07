@@ -35,10 +35,12 @@ run `uv` — see §3. The equivalents:
 to `conformance/mutant_impl.py`, which is gitignored, and never edits
 `reference/rowspec/table.py`, so an interrupted run leaves the tree clean —
 confirmed after a kill. **kindkit's gate is the opposite**: `tools/mutation_gate.py`
-opens each target in place and restores in a `finally`, and its targets are seven
-tracked files — `kindkit/runner.py`, `cli.py`, `gitmerge.py`, `mutation.py` and
-the three under `tools/`. A completed run is clean; a killed one leaves a mutated
-tracked file. Run it in a throwaway clone, or be ready to `git checkout --`.
+opens each target in place and restores in a `finally`, and its targets are nine
+tracked files spread across `kindkit/`, `tools/`, `case-tree/` and `tests/`. A
+completed run is clean; a killed one leaves a mutated tracked file. Run it in a
+throwaway clone, and if you do kill one, **`git status` is the list** — do not
+restore from a list written down here, which is exactly how two of the nine got
+missed when this paragraph was first written.
 
 `v0.1.0` is tagged, on PyPI, and ships a GitHub Action. The suite, the mutation
 gate and the case-tree convention now come from kindkit; what stayed is
@@ -234,13 +236,30 @@ separate places.
 and the second is the direct **parent** of the first — one commit, and no figure
 has yet been shown to move for it.
 
-**The harness is right and §3 is the off-by-one.** `corpora.json` records how its
+**The harness is right and §3 is wrong on both.** `corpora.json` records how its
 pins were chosen: D8's own header states 6,286 / 2,623 / 1,848 commits per
-corpus, and the pin is the commit where `git rev-list --count` equals that. For
-`rust-book`, `917544888a55` gives **6286** and `1500248d` gives **6287**. So
-`spike/harness/corpora.json` is the file to read before running the control arm,
-and research §3's `rust-book` pin names a tree one commit ahead of the one D8's
-header describes. Always name the SHA.
+corpus, and the pin is the commit where `git rev-list --count` equals that.
+Measured:
+
+    corpus            D8 header   research §3        harness
+    rust-book             6,286   1500248d  6287     917544888a55  6286
+    obsidian-help         2,623   327a782e  2630     a3985b58      2623
+    commonmark-spec       1,848   3da93942  1848     3da93942      1848
+
+`commonmark-spec` agrees only because both files name the same commit. So §3 is
+one commit ahead on `rust-book` and **seven** ahead on `obsidian-help` — and the
+seven is the gap that produces `anchors=343` against `384`.
+
+**Which means `343` is a measurement of a tree D8 never ran on.** Three separate
+corrections reconciled that figure, and all three treated §3's pin as canonical
+and `a3985b58` as merely the local corpus cache. The counts say that premise was
+backwards. Research reaches the same conclusion from the other side without
+noticing it: `D8-identity.md` §3.2 records that `a3985b58` "reproduces the
+original arm exactly" and that "the original clone's commit was never recorded".
+It was recorded — as a count, in §1's header, and 2,623 is `a3985b58`.
+
+Read `spike/harness/corpora.json` before running the control arm. Tracked as
+kindspec/research#9. Always name the SHA.
 
 **A squash merge discards branch commit messages.** Every repository here has
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
