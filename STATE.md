@@ -70,7 +70,7 @@ The second implementation (`reference/rowspec_alt/`) is the load-bearing one —
 written from `SPEC.md` alone, run against the same fixture tree in CI, and right
 on the last three questions where the two disagreed.
 
-### kindkit — in use by rowspec; kindkit#4 is the open v0 item
+### kindkit — tagged v0.1.0, in use by rowspec; kindkit#4 is the open v0 item
 
     99 mutations, 99 caught, 0 survived, 0 broken    just mutants   (throwaway clone)
     145 passed                                        just test   (1 skips without node)
@@ -175,6 +175,10 @@ closed); the new-repository default is read back from configuration and has
 not been observed on a new repository. A never-issued `ghp_` token is *accepted*
 — it is not a secret to the scanner — so test with a pattern-matched provider.
 
+**Two-factor authentication is required for every org member** (`gh api
+orgs/kindspec --jq .two_factor_requirement_enabled` prints `true`). That is read
+back from configuration.
+
 **rowspec's `pypi` environment deploys only from `v*` tags** (rowspec#55; `gh
 api repos/kindspec/rowspec/environments/pypi/deployment-branch-policies`). That
 is read back from configuration; no refusal has been observed yet, which is why
@@ -195,9 +199,46 @@ these projects do: 195 accepted cases against 19,337 single-side pairs.
 §6 commits both outcomes as deliverables. A published finding that prose does not
 earn a format is the likelier draft 0, and it is a result rather than a failure.
 
+### Owner decisions, 2026-10-07
+
+These concern the public work and are settled. Each draft named below is
+approved by the owner **before** it is committed.
+
+- **blockspec#2 runs under a superseding pre-registration, written first.** It
+  starts with the single-edit and uniqueness measurements on the three named
+  corpora. Those are the two questions the decision turned on: whether `LOG.md`
+  §9's one-author, one-commit shape occurs there, and whether those corpora
+  carry the repeated single-line blocks on which the oracle is undecidable
+  (`LOG.md` §6.2). blockspec's `spike/LOG.md` §11 still records the question as
+  open; it is behind this file until the superseding draft lands.
+- **nodespec gets its own pre-registered spike now**, once blockspec#2 is set
+  up. It no longer waits for blockspec to resolve.
+- **A fresh agent in an information-barrier worktree satisfies both
+  independence rules**: the suite-author rule (`AGENTS.md` §2.1) and blind
+  tiering (blockspec `PRE-REGISTRATION.md` §4.1). It has no access to the
+  authoring conversation, and its worktree lacks what it must not see. What
+  each such agent was given is logged in the repository it works on.
+- **rowspec's spec-shape questions are deferred, to be tracked as issues**:
+  conformance fixtures for CSV mode, and stable identifiers for the §9
+  refusals. The first is raised in rowspec#59, which records that there are no
+  CSV fixtures under `conformance/`. The second **has no issue yet**: `gh api
+  'repos/kindspec/rowspec/issues?state=all&per_page=100' --jq '.[].title' |
+  grep -i identif` prints nothing, and rowspec has fewer than 100 issues and
+  pull requests, so that one page is all of them.
+- **kindkit is tagged `v0.1.0`, and PyPI comes later.** The tag peels to
+  `bf716e3` — kindkit `main` on 2026-10-07, one docs commit after rowspec's pin
+  `a26f8f8` (`git ls-remote --tags https://github.com/kindspec/kindkit`;
+  `gh api repos/kindspec/kindkit/compare/a26f8f8...bf716e3 --jq .ahead_by`
+  prints 1). rowspec still pins by commit, and the comment above that pin in
+  its `pyproject.toml` still says kindkit "has no tag". `kindkit` is not on PyPI
+  (`curl -s -o /dev/null -w '%{http_code}' https://pypi.org/pypi/kindkit/json`
+  prints 404).
+- **Two-factor authentication is required for the org** — see §1, `.github`,
+  security settings.
+
 In order:
 
-1. **blockspec#2 — the duplicate-heavy arm, behind an open owner decision.**
+1. **blockspec#2 — draft the superseding pre-registration.**
    The corpora are named and pinned in `spike/PRE-REGISTRATION.md` §5.1. Ranked
    by evaluable human-authored cases: `kubernetes/website` is the largest arm at
    roughly 800 — an **upper** estimate extrapolated from the most recent 400 of
@@ -206,37 +247,31 @@ In order:
    **21 to 25** and the only legal-text coverage. Read §5.1 for why that last
    one is a range and not a number.
 
-   **Open, for the owner to decide**: write a superseding pre-registration
-   before running it, or run #2 under the current one as it stands.
-   blockspec's `spike/LOG.md` §11 records this as open and "decides neither
-   way"; nothing here decides it either. Considerations on both sides, as
-   blockspec#2 lists them:
-   - **For an oracle change:** `spike/README.md` and `LOG.md` §6.2 say the
-     arm "needs a superseding oracle statement before its prose numbers can be
-     believed" — the oracle (TLLC) is confident on repeated single-line blocks
-     where the truth is undecidable (`spike/harness/oracle_limitation.py`).
-     Whether the three named corpora actually have that shape has not been
-     measured.
-   - **Against needing a new pre-registration for that:**
-     `PRE-REGISTRATION.md` §3.1 has the experiment construct and name its own
-     oracle before running, and §8 requires superseding only for changes to
-     §3, §4 or §6.
-   - **For superseding:** `LOG.md` §9's shape — one author, one commit, no
-     merge — falls outside the FOUND criteria, because §3(5) requires the
-     defect to be created by the merge. Making that shape count means changing
-     §3, which only a superseding pre-registration can do.
-2. **Tier the candidates, blind** — 16 cases, 85 records (§1). Needs someone
-   who has not seen the frequencies, per §4.1.
-3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
+   Why superseding rather than amending: `LOG.md` §9's shape — one author, one
+   commit, no merge — falls outside the FOUND criteria, because §3(5) requires
+   the defect to be created by the merge. Making that shape count changes §3,
+   and §8 allows that only by superseding. The oracle needs restating too:
+   `spike/README.md` and `LOG.md` §6.2 say the arm "needs a superseding oracle
+   statement before its prose numbers can be believed", because TLLC is
+   confident on repeated single-line blocks where the truth is undecidable
+   (`spike/harness/oracle_limitation.py`). The single-edit and uniqueness
+   measurements come first because they say whether either problem arises in
+   these corpora at all. The owner approves the draft before it is committed;
+   nothing runs under it before then.
+2. **nodespec's existential spike — draft its pre-registration**, once
+   blockspec#2 is set up. The owner approves the draft before commit. Its brief
+   argues the rowspec thesis does not transfer to canvases at all, and that a
+   finding of "do not build this" is a legitimate outcome there too.
+3. **Tier the candidates, blind** — 16 cases, 85 records (§1). Needs someone
+   who has not seen the frequencies, per §4.1. A fresh agent in a worktree
+   without the frequencies counts; log what it was given.
+4. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
    into the repository with its reversal cost.
-4. **blockspec#5 — author the case tree before any implementation exists.** The
+5. **blockspec#5 — author the case tree before any implementation exists.** The
    §0 decision, and the one discipline rowspec had to retrofit.
-5. **kindkit#4 — the reusable CI workflow.** The last v0 item.
-6. **nodespec's existential spike**, if blockspec resolves negative. Its brief
-   argues the rowspec thesis does not transfer to canvases at all, and that a
-   finding of "do not build this" is a legitimate outcome there too.
+6. **kindkit#4 — the reusable CI workflow.** The last v0 item.
 
 Open issues carry acceptance criteria and a red-before-green requirement. List
 them per repository rather than trusting a count written here:

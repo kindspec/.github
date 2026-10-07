@@ -55,6 +55,10 @@ implementation at all. It cannot read `reference/` because `reference/` is not
 there. An agent that finds itself able to read the implementation it is writing
 cases against must stop and say so rather than proceed carefully.
 
+In practice: a fresh agent with no access to the authoring conversation, working
+in a worktree that lacks the implementation, counts as an independent author.
+Log in the repository what it was given.
+
 ### 2.2 A check that cannot fail must never report a pass
 
 This project keeps reproducing that failure in its own tooling — `STATE.md` §6
