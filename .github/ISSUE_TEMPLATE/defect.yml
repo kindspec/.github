@@ -1,0 +1,39 @@
+name: Defect
+description: Something behaves wrongly — including a check that passes when it should not.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reproduce before reporting — a failure inferred from reading code is a guess
+        ([AGENTS.md](https://github.com/kindspec/.github/blob/main/AGENTS.md) §4).
+        If a check reported a pass over something it never evaluated, say so; that is
+        the defect this project keeps finding (§2.2).
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Exact commands, from a named commit. Someone else should be able to paste them.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected versus actual
+      description: What should have happened, and what did — actual output, not a summary of it.
+    validations:
+      required: true
+  - type: textarea
+    id: shown
+    attributes:
+      label: How was it shown?
+      description: >-
+        What you ran and watched go red. When this is fixed, which test or check
+        should fail on the current code and pass after — and has anyone seen it fail?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: What would have to be true to close this.

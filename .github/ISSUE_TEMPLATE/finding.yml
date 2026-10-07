@@ -1,0 +1,44 @@
+name: Measurement or finding
+description: A number, or a result that bears on a design decision.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every figure carries the command that produced it; an estimate is labelled as one
+        ([AGENTS.md](https://github.com/kindspec/.github/blob/main/AGENTS.md) §4). If this
+        decides whether a format should exist at all, the criterion is pre-registered and
+        committed before the experiment runs — link it.
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding
+      description: The claim, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The command that produced each figure, and what it printed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs, pinned
+      description: Repository and commit for the code, and for each corpus the pin it was run at.
+    validations:
+      required: true
+  - type: textarea
+    id: discriminates
+    attributes:
+      label: What would make this wrong?
+      description: >-
+        Would the measurement give the same answer if the claim were false? Counts
+        inflated by replication or fill-down, empty inputs, a check that cannot fail.
+  - type: textarea
+    id: bears-on
+    attributes:
+      label: What it bears on
+      description: The decision, issue or pre-registration this changes, if any.
