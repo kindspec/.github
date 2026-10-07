@@ -1,0 +1,17 @@
+kindspec/.github is licensed per directory. This is deliberate, not an oversight.
+
+  AGENTS.md, STATE.md,
+  README.md, profile/       CC-BY-4.0
+  scripts/                  MIT
+
+profile/ includes the org mark in profile/assets/. Anything else in this
+repository that is a document rather than code is CC-BY-4.0.
+
+Full texts are in LICENSES/. Source files carry SPDX headers.
+
+WHY THE SPLIT
+
+It follows the split every kindspec repository uses: prose under CC-BY-4.0, so
+the contract can be copied and adapted with attribution; code under MIT. The
+contract is meant to be reused — a rule other projects can lift is worth more
+than one they have to rewrite.
