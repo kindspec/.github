@@ -2,10 +2,11 @@
 
 Org-level defaults for [kindspec](https://github.com/kindspec).
 
+- `scripts/check_required_checks.py` — fails when a job that runs on pull
+  requests gates no merge, or a required check never reports; its mutation
+  sweep is `scripts/sweep_check_required_checks.py`.
 - `profile/README.md` — the org landing page.
 - `profile/assets/` — the org mark.
-- `scripts/check_required_checks.py` — fails when a pull_request job gates no
-  merge, or a required check is produced by no job.
 - `scripts/generate_logo.py` — regenerates that mark.
 
 Shared workflows, issue templates, and the other org-wide defaults GitHub

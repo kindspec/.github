@@ -4,22 +4,34 @@
 Adding a workflow to a repository does not add it to the ruleset, so a suite can
 run on every pull request and gate nothing (kindspec/.github#3). This fails when:
 
-  UNGATED      a job that runs on pull_request is not a required check
-  ORPHANED     a required check is a context no workflow job produces
+  UNGATED      a job that runs on pull requests to the default branch is not a
+               required check
+  ORPHANED     a required check is a context no such job produces. A job that
+               runs only on merge_group, pull_request_target (its check runs
+               attach to the base commit), push, or on pull requests to other
+               branches does not count: the context never reports on the PR head
+  TRIGGER      a required job's pull_request `types:` omit opened or synchronize,
+               so it does not report on every pull request head
+  CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
+               success: it has a job-level `if:`, or something in its `needs:`
+               chain has one or is not itself required
   PATH-FILTER  a required job is path-filtered, so it never reports on an
                unrelated pull request and blocks it forever (AGENTS.md 3.2)
   STALE-ALLOW  an ALLOW entry matches no job any more
 
-Exit 0 clean, 1 on any finding, 2 when something could not be evaluated
-(no repositories read, an unparseable workflow, a matrix or reusable-workflow
-job whose context names this script does not expand). A run that could not
-look must not report a pass.
+Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
+repositories read, an API or authentication failure, a repository whose rules
+cannot be read (rulesets on a private repository need a paid plan), a workflow
+the parser cannot read, or a matrix, reusable-workflow or expression-named job
+whose context names this script does not expand. A run that could not look
+must not report a pass.
 
-Reads only public data: the org's public repositories, their workflow files on
-the default branch, and the rules that apply to that branch
-(GET /repos/{o}/{r}/rules/branches/{b}). Uses the `gh` CLI for the calls.
+Reads every repository in the org that the caller can see, through the `gh`
+CLI: workflow files on the default branch, the rules that apply to that branch
+(GET /repos/{o}/{r}/rules/branches/{b}) and classic branch protection.
+--public-only skips private repositories and says how many it skipped.
 
-    python3 scripts/check_required_checks.py [--org kindspec]
+    python3 scripts/check_required_checks.py [--org kindspec] [--public-only]
     python3 scripts/check_required_checks.py --save snap.json   # also write what was read
     python3 scripts/check_required_checks.py --load snap.json   # evaluate a snapshot offline
     python3 scripts/check_required_checks.py --selftest         # each finding must fire
@@ -32,17 +44,22 @@ import re
 import subprocess
 import sys
 
-# Jobs that run on pull_request but deliberately gate nothing, as
+# Jobs that run on pull requests but deliberately gate nothing, as
 # (repo, workflow path, job id): reason. Jobs that never run on a pull request
 # (rowspec's release.yml: gate, build, publish run on v* tags) are excluded by
 # their triggers and need no entry here.
 ALLOW = {}
 
-PR_EVENTS = ("pull_request", "pull_request_target", "merge_group")
 ACTIONS_APP_ID = 15368  # GitHub Actions; a context from another app is not a workflow job
+DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unreported
+GH = ["gh"]
 
 
 class Unsupported(Exception):
+    pass
+
+
+class Unreadable(Exception):
     pass
 
 
@@ -163,8 +180,37 @@ def parse_yaml(text):
 # --- evaluation ---
 
 
-def pr_jobs(workflow):
-    """Yield (job id, context, path-filtered, unresolved reason) for PR-triggered jobs."""
+def _glob(pattern):
+    if re.search(r"[?+\[\]]", pattern):
+        raise Unsupported(f"branch filter pattern {pattern!r}")
+    parts = (re.escape(p).replace(r"\*", "[^/]*") for p in pattern.split("**"))
+    return re.compile(".*".join(parts) + r"\Z")
+
+
+def _branch_runs(config, branch):
+    """Whether a pull_request trigger with this config runs for PRs into branch."""
+    if not isinstance(config, dict):
+        return True
+    patterns = config.get("branches")
+    ignore = config.get("branches-ignore")
+    if ignore is not None:
+        ignore = ignore if isinstance(ignore, list) else [ignore]
+        return not any(_glob(str(p)).match(branch) for p in ignore)
+    if patterns is None:
+        return True
+    runs = False
+    for p in patterns if isinstance(patterns, list) else [patterns]:
+        p = str(p)
+        if p.startswith("!"):
+            if _glob(p[1:]).match(branch):
+                runs = False
+        elif _glob(p).match(branch):
+            runs = True
+    return runs
+
+
+def pr_trigger(workflow, branch):
+    """(how the workflow reaches a PR into branch, path-filtered, restricted types, why not)."""
     on = workflow.get("on")
     if isinstance(on, str):
         on = [on]
@@ -172,12 +218,25 @@ def pr_jobs(workflow):
         on = {e: None for e in on}
     if not isinstance(on, dict):
         raise Unsupported(f"unreadable 'on': {on!r}")
-    events = [e for e in PR_EVENTS if e in on]
-    if not events:
-        return
-    filtered = any(
-        isinstance(on[e], dict) and ({"paths", "paths-ignore"} & set(on[e])) for e in events
-    )
+    if "pull_request" in on:
+        config = on["pull_request"]
+        if _branch_runs(config, branch):
+            config = config if isinstance(config, dict) else {}
+            filtered = bool({"paths", "paths-ignore"} & set(config))
+            types = config.get("types")
+            if types is not None:
+                types = set(map(str, types if isinstance(types, list) else [types]))
+            restricted = types is not None and not DEFAULT_TYPES <= types
+            return True, filtered, sorted(types) if restricted else None, None
+        why = f"pull_request excludes '{branch}'"
+    else:
+        others = [e for e in ("merge_group", "pull_request_target", "push") if e in on]
+        why = "only " + ", ".join(others) if others else None
+    return False, False, None, why
+
+
+def jobs_of(workflow):
+    """Yield (job id, context, if, needs, unresolved reason)."""
     for job_id, job in (workflow.get("jobs") or {}).items():
         job = job or {}
         context = str(job.get("name", job_id))
@@ -188,28 +247,63 @@ def pr_jobs(workflow):
             unresolved = "matrix job; contexts are expanded per combination"
         elif "${{" in context:
             unresolved = "name is an expression"
-        yield job_id, context, filtered, unresolved
+        needs = job.get("needs") or []
+        needs = needs if isinstance(needs, list) else [needs]
+        yield job_id, context, "if" in job, [str(n) for n in needs], unresolved
+
+
+def _skippable(job_id, jobs, required, seen=frozenset()):
+    """Why job_id can be skipped on a pull request, or None."""
+    if jobs[job_id][2]:
+        return "job-level if:"
+    for n in jobs[job_id][3]:
+        if n not in jobs:
+            return f"needs '{n}', which is not a job in this workflow"
+        if n in seen:
+            continue
+        if jobs[n][4]:
+            return f"needs '{n}', which was not evaluated"
+        if jobs[n][1] not in required:
+            return f"needs '{n}', which is not required: if it fails, this job is skipped"
+        why = _skippable(n, jobs, required, seen | {job_id})
+        if why:
+            return f"needs '{n}' ({why})"
+    return None
 
 
 def evaluate(snapshot, allow):
     findings, incomplete, used = [], [], set()
     stats = {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}
     for repo, data in sorted(snapshot.items()):
+        if data.get("unreadable"):
+            incomplete.append(f"{repo}: not evaluated: {data['unreadable']}")
+            continue
+        if "default_branch" not in data:
+            incomplete.append(f"{repo}: not evaluated: snapshot has no default_branch")
+            continue
         stats["repos"] += 1
+        branch = data["default_branch"]
         required = {}
         for c in data["required"]:
             required.setdefault(c["context"], c.get("integration_id"))
         stats["required"] += len(required)
-        produced, blind = set(), False
+        produced, elsewhere, blind = set(), {}, False
         for path, text in sorted(data["workflows"].items()):
             stats["workflows"] += 1
             try:
-                jobs = list(pr_jobs(parse_yaml(text)))
+                workflow = parse_yaml(text)
+                runs, filtered, types, why = pr_trigger(workflow, branch)
+                jobs = {j[0]: j for j in jobs_of(workflow)}
             except Unsupported as e:
                 incomplete.append(f"{repo}: {path}: not evaluated: {e}")
                 blind = True
                 continue
-            for job_id, context, filtered, unresolved in jobs:
+            if not runs:
+                for _, context, *_ in jobs.values():
+                    if why:
+                        elsewhere.setdefault(context, why)
+                continue
+            for job_id, context, _, _, unresolved in jobs.values():
                 stats["pr_jobs"] += 1
                 where = f"{repo}: {path}: job '{job_id}'"
                 if (repo, path, job_id) in allow:
@@ -222,13 +316,25 @@ def evaluate(snapshot, allow):
                 produced.add(context)
                 if context not in required:
                     findings.append(
-                        f"UNGATED      {where} runs on pull_request; "
+                        f"UNGATED      {where} runs on pull requests; "
                         f"'{context}' is not a required check"
                     )
-                elif filtered:
+                    continue
+                if filtered:
                     findings.append(
                         f"PATH-FILTER  {where} is required but its pull_request "
                         "trigger is path-filtered"
+                    )
+                if types:
+                    findings.append(
+                        f"TRIGGER      {where} is required but pull_request types {types} "
+                        "omit opened or synchronize"
+                    )
+                skip = _skippable(job_id, jobs, required)
+                if skip:
+                    findings.append(
+                        f"CONDITIONAL  {where} is required but can be skipped, which "
+                        f"reports success: {skip}"
                     )
         for context, app in sorted(required.items()):
             if app not in (None, ACTIONS_APP_ID):
@@ -240,14 +346,15 @@ def evaluate(snapshot, allow):
                     f"{repo}: required '{context}' not matched, and a job above was not read"
                 )
             elif context not in produced:
+                note = f" ({elsewhere[context]})" if context in elsewhere else ""
                 findings.append(
-                    f"ORPHANED     {repo}: required check '{context}' is produced by "
-                    "no pull_request job — every pull request waits on it forever"
+                    f"ORPHANED     {repo}: required check '{context}' is produced by no "
+                    f"job that reports on a pull request into '{branch}'{note}"
                 )
     for key in sorted(set(allow) - used):
         findings.append(f"STALE-ALLOW  {key} matches no pull_request job")
     if stats["repos"] == 0:
-        incomplete.append("no repositories were read")
+        incomplete.append("no repositories were evaluated")
     return findings, incomplete, stats
 
 
@@ -259,37 +366,70 @@ def exit_code(findings, incomplete):
 
 
 def gh(path):
-    r = subprocess.run(
-        ["gh", "api", "--paginate", path], capture_output=True, text=True, check=False
-    )
+    try:
+        r = subprocess.run(
+            [*GH, "api", "--paginate", path], capture_output=True, text=True, check=False
+        )
+    except OSError as e:
+        raise Unreadable(f"cannot run {GH[0]}: {e}") from e
     if r.returncode != 0:
         if "HTTP 404" in r.stderr:
             return None
-        sys.exit(f"gh api {path} failed: {r.stderr.strip()}")
-    # --paginate concatenates JSON arrays as ][
-    return json.loads(re.sub(r"\]\s*\[", ",", r.stdout) if r.stdout.startswith("[") else r.stdout)
+        raise Unreadable(f"gh api {path} failed: {r.stderr.strip() or r.returncode}")
+    try:
+        # --paginate concatenates JSON arrays as ][
+        out = r.stdout.strip()
+        return json.loads(re.sub(r"\]\s*\[", ",", out) if out.startswith("[") else out)
+    except ValueError as e:
+        raise Unreadable(f"gh api {path}: not JSON: {e}") from e
 
 
-def collect(org):
-    snapshot = {}
-    for repo in gh(f"orgs/{org}/repos?type=public&per_page=100"):
-        if repo["archived"] or repo["private"]:
+def collect(org, public_only=False, api=gh):
+    repos = api(f"orgs/{org}/repos?per_page=100")
+    if not isinstance(repos, list):
+        raise Unreadable(f"cannot list repositories of '{org}'")
+    snapshot, skipped = {}, 0
+    for repo in repos:
+        if repo["archived"]:
+            continue
+        if public_only and repo["private"]:
+            skipped += 1
             continue
         name, branch = repo["name"], repo["default_branch"]
-        workflows = {}
-        for entry in gh(f"repos/{org}/{name}/contents/.github/workflows?ref={branch}") or []:
-            if entry["type"] == "file" and entry["name"].endswith((".yml", ".yaml")):
-                blob = gh(f"repos/{org}/{name}/contents/{entry['path']}?ref={branch}")
-                workflows[entry["path"]] = base64.b64decode(blob["content"]).decode()
-        required = []
-        for rule in gh(f"repos/{org}/{name}/rules/branches/{branch}") or []:
-            if rule["type"] == "required_status_checks":
-                required += rule["parameters"]["required_status_checks"]
-        protection = (gh(f"repos/{org}/{name}/branches/{branch}") or {}).get("protection", {})
-        for c in protection.get("required_status_checks", {}).get("checks", []):
-            required.append({"context": c["context"], "integration_id": c.get("app_id")})
-        snapshot[name] = {"workflows": workflows, "required": required}
-    return snapshot
+        try:
+            workflows = {}
+            listing = api(f"repos/{org}/{name}/contents/.github/workflows?ref={branch}")
+            for entry in listing or []:
+                if entry["type"] == "file" and entry["name"].endswith((".yml", ".yaml")):
+                    blob = api(f"repos/{org}/{name}/contents/{entry['path']}?ref={branch}")
+                    workflows[entry["path"]] = base64.b64decode(blob["content"]).decode()
+            rules = api(f"repos/{org}/{name}/rules/branches/{branch}")
+            if rules is None:
+                raise Unreadable(f"no rules endpoint for '{branch}'")
+            required = []
+            for rule in rules:
+                if rule["type"] == "required_status_checks":
+                    required += rule["parameters"]["required_status_checks"]
+            protection = (api(f"repos/{org}/{name}/branches/{branch}") or {}).get("protection")
+            for c in ((protection or {}).get("required_status_checks") or {}).get("checks", []):
+                required.append({"context": c["context"], "integration_id": c.get("app_id")})
+        except Unreadable as e:
+            snapshot[name] = {"unreadable": str(e)}
+            continue
+        snapshot[name] = {"workflows": workflows, "required": required, "default_branch": branch}
+    return snapshot, skipped
+
+
+def run_live(org, public_only, save=None):
+    """Collect and evaluate. Returns (findings, incomplete, stats, skipped)."""
+    try:
+        snapshot, skipped = collect(org, public_only)
+    except Unreadable as e:
+        return [], [str(e)], {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}, 0
+    if save:
+        with open(save, "w") as fh:
+            json.dump(snapshot, fh, indent=1, sort_keys=True)
+    return (*evaluate(snapshot, ALLOW), skipped)
 
 
 # --- self-test: every finding and every refusal must be seen to fire ---
@@ -298,26 +438,53 @@ _PR = "on: [push, pull_request]\njobs:\n  {job}:\n    runs-on: x\n"
 _CHECK = [{"context": "check", "integration_id": ACTIONS_APP_ID}]
 
 
+def _on(trigger):
+    return f"on:\n{trigger}jobs:\n  check:\n    runs-on: x\n"
+
+
+def _fake_api(responses):
+    def api(path):
+        for prefix, value in responses.items():
+            if path.startswith(prefix):
+                if isinstance(value, Exception):
+                    raise value
+                return value
+        return None
+
+    return api
+
+
 def selftest():
     def run(snapshot, allow=None):
-        f, inc, _ = evaluate(snapshot, allow or {})
+        try:
+            f, inc, _ = evaluate(snapshot, allow or {})
+        except Exception as e:  # noqa: BLE001 -- a crash is a failed case
+            return [f"CRASH {type(e).__name__}"], -1
         return [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc), exit_code(f, inc)
 
-    def repo(wf, required=_CHECK):
-        return {"r": {"workflows": {"w.yml": wf}, "required": required}}
+    def repo(wf, required=_CHECK, more=None):
+        workflows = {"w.yml": wf, **(more or {})}
+        return {"r": {"workflows": workflows, "required": required, "default_branch": "main"}}
+
+    def live(responses, public_only=False):
+        try:
+            snap, skipped = collect("o", public_only, api=_fake_api(responses))
+        except Unreadable as e:
+            return ["INCOMPLETE"], 2, str(e)
+        except Exception as e:  # noqa: BLE001
+            return [f"CRASH {type(e).__name__}"], -1, None
+        got, code = run(snap)
+        return got, code, skipped
 
     tags = (
         "on:\n  push:\n    tags: ['v*']\njobs:\n  gate:\n    steps:\n      - run: |\n          x\n"
     )
+    extra = "  extra:\n    runs-on: x\n"
+    inc2 = ["INCOMPLETE", "INCOMPLETE"]
     cases = [
         ("clean", repo(_PR.format(job="check")), [], None),
         ("named job is clean", repo(_PR.format(job="j") + "    name: check\n"), [], None),
-        (
-            "ungated job",
-            repo(_PR.format(job="check") + "  extra:\n    runs-on: x\n"),
-            ["UNGATED"],
-            None,
-        ),
+        ("ungated job", repo(_PR.format(job="check") + extra), ["UNGATED"], None),
         (
             "orphaned context",
             repo(_PR.format(job="check"), _CHECK + [{"context": "gone"}]),
@@ -327,13 +494,19 @@ def selftest():
         ("tag-only job is not a pr job", repo(tags, []), [], None),
         (
             "required but path-filtered",
-            repo("on:\n  pull_request:\n    paths: ['a/**']\njobs:\n  check:\n    runs-on: x\n"),
+            repo(_on("  pull_request:\n    paths: ['a/**']\n")),
+            ["PATH-FILTER"],
+            None,
+        ),
+        (
+            "required but paths-ignore",
+            repo(_on("  pull_request:\n    paths-ignore: ['a/**']\n")),
             ["PATH-FILTER"],
             None,
         ),
         (
             "allowlisted",
-            repo(_PR.format(job="check") + "  extra:\n    runs-on: x\n"),
+            repo(_PR.format(job="check") + extra),
             [],
             {("r", "w.yml", "extra"): "test"},
         ),
@@ -344,9 +517,94 @@ def selftest():
             {("r", "w.yml", "gone"): "test"},
         ),
         (
+            "merge_group only never reports on the PR",
+            repo(_on("  merge_group:\n")),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "pull_request_target attaches to the base commit",
+            repo("on: pull_request_target\njobs:\n  check:\n    runs-on: x\n"),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "push only does not count",
+            repo("on: [push]\njobs:\n  check:\n    runs-on: x\n"),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "types: [labeled]",
+            repo(_on("  pull_request:\n    types: [labeled]\n")),
+            ["TRIGGER"],
+            None,
+        ),
+        (
+            "types with opened and synchronize is clean",
+            repo(_on("  pull_request:\n    types: [opened, synchronize, labeled]\n")),
+            [],
+            None,
+        ),
+        (
+            "branches: [develop] excludes main",
+            repo(_on("  pull_request:\n    branches: [develop]\n")),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "branches-ignore: [main]",
+            repo(_on("  pull_request:\n    branches-ignore: [main]\n")),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "negated branch pattern",
+            repo(_on("  pull_request:\n    branches: ['**', '!main']\n")),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "branches: ['ma*'] includes main",
+            repo(_on("  pull_request:\n    branches: ['ma*']\n")),
+            [],
+            None,
+        ),
+        (
+            "job-level if: is skippable",
+            repo(_PR.format(job="check") + "    if: github.event_name == 'push'\n"),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs a job with an if:",
+            repo(
+                _PR.format(job="check") + "    needs: build\n"
+                "  build:\n    if: github.event_name == 'push'\n    runs-on: x\n",
+                _CHECK + [{"context": "build"}],
+            ),
+            ["CONDITIONAL", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs an unrequired job",
+            repo(_PR.format(job="check") + "    needs: [build]\n  build:\n    runs-on: x\n"),
+            ["UNGATED", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs a required job is clean",
+            repo(
+                _PR.format(job="check") + "    needs: [build]\n  build:\n    runs-on: x\n",
+                _CHECK + [{"context": "build"}],
+            ),
+            [],
+            None,
+        ),
+        (
             "matrix is not passed",
             repo(_PR.format(job="check") + "    strategy:\n      matrix:\n        v: [1, 2]\n"),
-            ["INCOMPLETE", "INCOMPLETE"],
+            inc2,
             None,
         ),
         (
@@ -354,51 +612,118 @@ def selftest():
             repo(
                 _PR.format(job="check") + "    uses: kindspec/kindkit/.github/workflows/c.yml@v1\n"
             ),
-            ["INCOMPLETE", "INCOMPLETE"],
+            inc2,
             None,
         ),
         (
-            "unparseable is not passed",
-            repo("on: &a [pull_request]\n"),
+            "expression name is not passed",
+            repo(_PR.format(job="j") + "    name: ${{ matrix.v }}\n"),
+            inc2,
+            None,
+        ),
+        (
+            "context from another app is not passed",
+            repo(_PR.format(job="check"), _CHECK + [{"context": "ci/x", "integration_id": 1}]),
+            ["INCOMPLETE"],
+            None,
+        ),
+        ("unparseable is not passed", repo("on: &a [pull_request]\n"), inc2, None),
+        (
+            "unreadable repository is not passed",
+            {"r": {"unreadable": "HTTP 403"}},
             ["INCOMPLETE", "INCOMPLETE"],
             None,
         ),
         ("nothing read is not passed", {}, ["INCOMPLETE"], None),
+        (
+            "snapshot without a default branch is not passed",
+            {"r": {"workflows": {}, "required": []}},
+            ["INCOMPLETE", "INCOMPLETE"],
+            None,
+        ),
     ]
     bad = 0
-    for label, snap, want, allow in cases:
-        got, code = run(snap, allow)
-        want_code = 1 if set(want) - {"INCOMPLETE"} else 2 if want else 0  # not via exit_code
+
+    def report(label, got, code, want, want_code):
+        nonlocal bad
         ok = sorted(got) == sorted(want) and code == want_code
         bad += not ok
         mark = "ok  " if ok else "FAIL"
         print(f"{mark} {label}: got {got} exit {code}, want {want} exit {want_code}")
-    print(f"selftest: {len(cases) - bad} of {len(cases)} as expected")
+
+    for label, snap, want, allow in cases:
+        got, code = run(snap, allow)
+        want_code = 1 if set(want) - {"INCOMPLETE"} else 2 if want else 0  # not via exit_code
+        report(label, got, code, want, want_code)
+
+    # collection: failures exit 2, never 1 and never a crash
+    pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
+    priv = {"name": "q", "default_branch": "main", "archived": False, "private": True}
+    forbidden = Unreadable("gh api ... failed: Upgrade to GitHub Pro (HTTP 403)")
+    got, code, _ = live({"orgs/": None})
+    report("unknown org", got, code, ["INCOMPLETE"], 2)
+    bp = {"protection": {"required_status_checks": {"checks": [{"context": "bp"}]}}}
+    got, code, _ = live({"orgs/": [pub], "repos/o/p/rules/": [], "repos/o/p/branches/": bp})
+    report("branch protection checks are read", got, code, ["ORPHANED"], 1)
+    got, code, _ = live({"orgs/": [priv], "repos/o/q/rules/": forbidden})
+    report("private repo without rulesets", got, code, inc2, 2)
+    got, code, skipped = live({"orgs/": [pub, priv], "repos/o/p/rules/": []}, public_only=True)
+    report(
+        f"--public-only skips and counts them ({skipped})",
+        got + ["?"] * (skipped != 1),
+        code,
+        [],
+        0,
+    )
+    global GH
+    saved = GH
+    try:
+        for label, cmd in (
+            ("no gh", ["/nonexistent/gh"]),
+            (
+                "bad token",
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('Bad credentials (HTTP 401)'); sys.exit(1)",
+                ],
+            ),
+        ):
+            GH = cmd
+            try:
+                f, inc, _, _ = run_live("o", False)
+            except Exception as e:  # noqa: BLE001
+                f, inc = [f"CRASH {type(e).__name__}"], []
+            report(label, ["INCOMPLETE"] * len(inc) + f, exit_code(f, inc), ["INCOMPLETE"], 2)
+    finally:
+        GH = saved
+    total = len(cases) + 6
+    print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--org", default="kindspec")
+    ap.add_argument("--public-only", action="store_true", help="skip private repositories")
     ap.add_argument("--save", metavar="FILE", help="write the collected snapshot as JSON")
     ap.add_argument("--load", metavar="FILE", help="evaluate a saved snapshot, offline")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
+    skipped = 0
     if args.load:
         with open(args.load) as fh:
-            snapshot = json.load(fh)
+            findings, incomplete, stats = evaluate(json.load(fh), ALLOW)
     else:
-        snapshot = collect(args.org)
-    if args.save:
-        with open(args.save, "w") as fh:
-            json.dump(snapshot, fh, indent=1, sort_keys=True)
-    findings, incomplete, stats = evaluate(snapshot, ALLOW)
+        findings, incomplete, stats, skipped = run_live(args.org, args.public_only, args.save)
     for line in findings:
         print(line)
     for line in incomplete:
         print(f"INCOMPLETE   {line}")
+    if skipped:
+        print(f"{skipped} private repositories skipped (--public-only)")
     print(
         f"{stats['repos']} repositories, {stats['workflows']} workflows, "
         f"{stats['pr_jobs']} pull_request jobs, {stats['required']} required checks: "
