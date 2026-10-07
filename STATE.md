@@ -19,13 +19,22 @@ reproduced from this checkout alone, that is said.
     74 killed, 0 survived          just mutants
     2 equivalent, 0 stale, 0 broken
     52 passed, 1 skipped           just test
-    clean                          just check
+    294 files clean                just check
 
-The case count is confirmed today. **The five run figures were last produced on
-2026-09-11** and could not be re-run on 2026-10-06, because this session's
-sandbox makes `~/.cache/uv` read-only and every recipe above goes through
-`uv run`. Re-run them before relying on them; they are a month old and the
-toolchain has moved under them.
+**All of these reproduce on 2026-10-06.** They were produced by calling the
+`.venv` directly rather than through `just`, because a sandboxed session cannot
+run `uv` — see §3. The equivalents:
+
+    ./.venv/bin/python conformance/run_cases.py
+    ./.venv/bin/python conformance/run_cases.py rowspec_alt.table
+    ./.venv/bin/python conformance/mutants.py
+    ./.venv/bin/python -m pytest -q
+    ./.venv/bin/ruff format --check . && ./.venv/bin/ruff check .
+
+The mutation gate writes its mutants to `conformance/mutant_impl.py`, which is
+gitignored, and never edits `reference/rowspec/table.py`. A run interrupted
+halfway therefore leaves the tree clean, which is worth knowing before killing
+one.
 
 `v0.1.0` is tagged, on PyPI, and ships a GitHub Action. The suite, the mutation
 gate and the case-tree convention now come from kindkit; what stayed is
@@ -42,15 +51,23 @@ on the last three questions where the two disagreed.
 
     73 mutations, 73 caught, 0 survived, 0 broken    just mutants
     109 passed                                        just test
+    20 files clean                                    just check
     6 cases in its own kv tree                        just cases
 
-Confirmed statically today: 73 mutation entries in `tools/mutation_gate.py`, 97
-test functions across six files — 109 collected, the difference being
-parametrisation — and 6 manifests in `tests/fixtures/kv`. **The run figures
-themselves were last produced on 2026-09-11** and are blocked by the same
-read-only `uv` cache. The validator was also run against rowspec's tree in
-kindkit#6, giving 429 manifests over both repositories with zero invalid and no
-fixture modified; that figure needs both checkouts.
+All of these reproduce on 2026-10-06, run from `.venv` rather than through
+`just`, by the same substitution as rowspec's.
+
+**96** test functions across **five** files collect as 109: 92 plain, three
+functions over three parameters each, and one over four layout entries in two
+directions. `grep -c '^def test_'` says 97 across six, and is wrong twice —
+`tests/kvkind.py` is the toy kind and defines none, and the 97th match is inside
+a triple-quoted `PROBE_TEST` string in `tests/test_mutation_gate.py`. Count with
+`ast`, not `grep`; from 97 the parametrisation arithmetic does not close.
+
+The case-tree validator was also run against rowspec's tree in kindkit PR #6,
+giving 429 manifests over both repositories with zero invalid and no fixture
+modified — 410 plus 13 reserved plus these 6. That figure needs both checkouts.
+Note #6 is a pull request; kindkit has no issue #6.
 
 Three pieces: the tree-driven runner, the case-tree convention under CC0, and the
 mutation gate a kind runs against its own implementation. rowspec adopting it
@@ -89,7 +106,8 @@ source and the pins §3 records. A fresh machine has to clone them; see §3 belo
 
 ### nodespec — stub, zero work
 
-One commit plus `DESIGN-BRIEF.md` and `AGENTS.md`. Its brief names three concrete
+Two commits: the stub, and a pointer at the org contract. No specification, no
+suite, no implementation. Its brief names three concrete
 `.canvas` referential-integrity holes — an override for a deleted node, an edge
 to a renamed node, and two branches adding different nodes with the same name —
 and calls the third the most likely home of a genuine silent-wrong merge.
@@ -114,9 +132,12 @@ earn a format is the likelier draft 0, and it is a result rather than a failure.
 In order:
 
 1. **blockspec#2 — run the duplicate-heavy arm.** The corpora are named and
-   pinned in §5.1 as of 2026-10-06: `github/site-policy`, `cncf/toc`,
-   `kubernetes/website`. `site-policy` is the primary arm at 43.6% both-sides
-   merge frequency against the control's 1.1%. Nothing blocks this.
+   pinned in `spike/PRE-REGISTRATION.md` §5.1, which arrives with blockspec#11 —
+   check that it has merged before relying on the reference. Ranked by evaluable
+   human-authored cases: `kubernetes/website` is the largest arm at roughly 800
+   extrapolated from a 400-merge sample, `cncf/toc` the cleanest at 71 with no
+   bot involvement, `github/site-policy` a supporting arm at about 29 and the
+   only legal-text coverage. Nothing blocks this.
 2. **Tier the 85 candidates, blind.** Needs someone who has not seen the
    frequencies, per §4.1.
 3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
@@ -130,9 +151,10 @@ In order:
    argues the rowspec thesis does not transfer to canvases at all, and that a
    finding of "do not build this" is a legitimate outcome there too.
 
-The 30-odd open issues are mostly small, each with acceptance criteria and a
-red-before-green requirement. `rowspec#43/#44/#45/#48` and `kindkit#8/#10` are
-the ones that touch a gate.
+Thirty issues are open, each with acceptance criteria and a red-before-green
+requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#41`, `#43`,
+`#48`, `#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
+gate defects and are **closed** — the kindkit adoption fixed both.
 
 ---
 
@@ -160,24 +182,51 @@ gitignored:
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
 
-blockspec's spike corpora are in `spike/PRE-REGISTRATION.md` §5.1 with their own
-pins. `research/CORPORA.md` lists everything the findings cite, including the
-benchmark archives the differential used.
+**blockspec's control arm pins two of these differently, and that is deliberate
+rather than a mistake to correct.** Its harness records its own pins in
+`spike/harness/corpora.json`, not in §5.1:
+
+| corpus | research §3 | blockspec harness |
+|---|---|---|
+| `rust-book` | `1500248d` | `917544888a55e4da7109bdba8c88c893c0da70f4` |
+| `obsidian-help` | `327a782e` | `a3985b585904ddb9f109bd80849b378085308c15` |
+| `commonmark-spec` | `3da93942` | same |
+
+A fresh machine that checks the table above out at research's pins and then runs
+blockspec's control gate is measuring different trees from the ones that gate was
+written against, and the harness prints its pin without ever comparing it to
+`corpora.json`, so the mismatch is silent. Read `corpora.json` before running the
+control arm. §5.1 of the pre-registration lists only the three duplicate-heavy
+corpora, with their own pins.
+
+`research/CORPORA.md` lists everything the findings cite, including the benchmark
+archives the differential used.
 
 **If an agent session is sandboxed**, check that `~/.cache/uv` is writable before
-trusting any result. A read-only cache makes every `uv run` recipe fail with
-`OSError 30` before the recipe body runs, so `just check` and `just test` cannot
-run at all in rowspec or kindkit. blockspec's harness is unaffected.
+reaching for `just`. A read-only cache makes every `uv run` recipe fail with
+`OSError 30` *before the recipe body runs*, so no `just` target works in rowspec
+or kindkit — which reads as a broken repository and is not one.
+
+**The suites themselves are unaffected.** Call the committed `.venv` directly and
+every figure in §1 reproduces; the blocked thing is the `uv` entry point, not the
+code. Do not redirect `UV_CACHE_DIR` into scratch to get around it — an empty
+cache in a sandboxed session cannot populate itself, and it hides the fault from
+the next session. blockspec's harness needs none of this: pure stdlib, `python3`
+directly.
 
 ---
 
 ## 4. Traps that have already cost time
 
-**"Pin" means two different trees.** research §3 pins `obsidian-help` at
-`327a782e`; blockspec's spike harness pins it at `a3985b58`, seven first-parent
-commits behind, and its own config calls that "D8's pin". The same arm gives
-`anchors=343` at one and `384` at the other. Three separate corrections have been
-needed for this one word. Always name the SHA.
+**"Pin" means two different trees, for two of the three control corpora.**
+research §3 pins `obsidian-help` at `327a782e`; blockspec's spike harness pins it
+at `a3985b58`, seven first-parent commits behind, and its own config calls that
+"D8's pin". The same arm gives `anchors=343` at one and `384` at the other.
+`rust-book` diverges the same way — `1500248d` against `917544888a55` — and that
+one went unnoticed through every correction, because each correction was about
+`obsidian-help`. Four separate corrections have now been needed for this one
+word. Always name the SHA, and read `spike/harness/corpora.json` rather than
+assuming the research pins apply.
 
 **A squash merge discards branch commit messages.** Every repository here has
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
@@ -236,8 +285,10 @@ for others. Parse with an anchored regex.
 
 ## 6. The transferable result
 
-Twelve-plus times, across mechanisms that look unrelated, a check reported a pass
-over something it had never evaluated:
+Repeatedly, across mechanisms that look unrelated, a check reported a pass over
+something it had never evaluated. The list below is what has been recorded; it is
+deliberately not numbered, because `AGENTS.md` §2.2 carries its own count and two
+hand-maintained totals in one repository will diverge:
 
 - a mutation gate scoring any non-zero exit as a kill, so an unimportable module
   counted as caught with nothing run
