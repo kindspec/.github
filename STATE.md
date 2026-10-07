@@ -204,8 +204,9 @@ earn a format is the likelier draft 0, and it is a result rather than a failure.
 These concern the public work and are settled. Each draft named below is
 approved by the owner **before** it is committed.
 
-- **blockspec#2 runs under a superseding pre-registration, written first.** It
-  starts by running research's two D8 harnesses on the three corpora that
+- **blockspec#2 runs under a superseding pre-registration, written first.**
+  The current pre-registration stays frozen as the record; the new one says why
+  it supersedes, and nothing is edited in place. It starts by running research's two D8 harnesses on the three corpora that
   blockspec's `spike/PRE-REGISTRATION.md` §5.1 names and pins: the single-edit
   anchor analysis (`experiments/D8-identity/anchor_eval3.py`) and the
   quote-uniqueness measurement (`experiments/D8-identity/e4_uniqueness.py`).
@@ -213,17 +214,21 @@ approved by the owner **before** it is committed.
   open; it is behind this file until the superseding draft lands.
 - **nodespec gets its own pre-registered spike now**, once blockspec#2 is set
   up. It no longer waits for blockspec to resolve.
-- **A fresh agent in an information-barrier worktree satisfies both
-  independence rules**: the suite-author rule (`AGENTS.md` §2.1) and blind
-  tiering (blockspec `PRE-REGISTRATION.md` §4.1). It has no access to the
-  authoring conversation, and its worktree lacks what it must not see. What
-  each such agent was given is logged in the repository it works on.
+- **A fresh agent behind an information barrier satisfies both independence
+  rules**: the suite-author rule (`AGENTS.md` §2.1) and blind tiering
+  (blockspec `PRE-REGISTRATION.md` §4.1). The barrier is an exported directory
+  holding only the permitted files and no `.git` — a `git archive` of the
+  allowed paths, not a worktree, which shares the object store and reaches
+  every commit (`git -C <worktree> show main:<path>` prints a file the worktree
+  has deleted). The agent gets no copy of the authoring conversation. Network
+  access is honour-system: every kindspec repository is public. What each
+  agent was given is logged in the repository it works on.
 - **rowspec's spec-shape questions are deferred, and tracked**: conformance
-  fixtures for CSV mode in rowspec#59, which records that there are none under
-  `conformance/`; stable identifiers for the §9 refusals in rowspec#61, which
+  fixtures for CSV mode in rowspec#63; stable identifiers for the §9 refusals in rowspec#61, which
   counts the parse cases that accept a refusal for any reason (`grep -rl
   '"refusal_contains": ""' conformance/cases | wc -l`, run in rowspec).
-- **kindkit is tagged `v0.1.0`, and PyPI comes later.** The tag peels to
+- **kindkit is tagged `v0.1.0`; PyPI comes once its contracts have a second
+  consumer.** The tag peels to
   `bf716e3` — kindkit `main` on 2026-10-07, one docs commit after rowspec's pin
   `a26f8f8` (`git ls-remote --tags https://github.com/kindspec/kindkit`;
   `gh api repos/kindspec/kindkit/compare/a26f8f8...bf716e3 --jq .ahead_by`
@@ -254,8 +259,12 @@ In order:
    confident on repeated single-line blocks where the truth is undecidable
    (`spike/harness/oracle_limitation.py`). It opens with research's D8
    single-edit anchor analysis (`anchor_eval3.py`) and quote-uniqueness
-   measurement (`e4_uniqueness.py`) on the §5.1 corpora, at §5.1's pins. §3
-   above covers the directory names and working directory both scripts assume.
+   measurement (`e4_uniqueness.py`) on the §5.1 corpora, at §5.1's pins. Both
+   scripts hardcode research's three corpora — `rust-book`, `obsidian-help`,
+   `cmspec` (`anchor_eval3.py:87`, `e4_uniqueness.py:12`) — so running them on
+   the §5.1 corpora means changing that list, and §3 below covers the working
+   directory they assume. **A run that prints `files=0` and exits 0 is a
+   failure, not a result.**
    The owner approves the draft before it is committed;
    nothing runs under it before then.
 2. **nodespec's existential spike — draft its pre-registration**, once
@@ -263,8 +272,9 @@ In order:
    argues the rowspec thesis does not transfer to canvases at all, and that a
    finding of "do not build this" is a legitimate outcome there too.
 3. **Tier the candidates, blind** — 16 cases, 85 records (§1). Needs someone
-   who has not seen the frequencies, per §4.1. A fresh agent in a worktree
-   without the frequencies counts; log what it was given.
+   who has not seen the frequencies, per §4.1. A fresh agent given an exported
+   directory without the frequencies counts (see the decision above); log what
+   it was given.
 4. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
@@ -477,7 +487,12 @@ here)`.
 
 - **§3, §4 and §6 of blockspec's pre-registration.** The five conditions for
   FOUND, the severity ranking with transclusion in tier A, the §4.1 tiering
-  procedure, and what each outcome publishes as. Frozen.
+  procedure, and what each outcome publishes as. Frozen. The sanctioned route
+  past them is superseding: a new pre-registration that says why, never an
+  edit. blockspec#2 takes that route (§2).
+- **A fresh agent behind an information barrier counts as independent**, for
+  the suite-author rule and for §4.1 blind tiering, with what it was given
+  logged (§2, and `AGENTS.md` §2.1 for what the barrier is).
 - **Identity per kind.** Opaque row ids for rowspec, no minted ids for prose,
   named rather than positional for nodes. The prose decision rests on
   `research/design-findings/D8-identity.md` §3.3, which is now reproducible —
