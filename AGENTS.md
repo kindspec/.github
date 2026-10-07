@@ -20,7 +20,7 @@ A specification and conformance suite per artifact kind. Knowledge artifacts —
 tables, documents, canvases — are edited by several people over years, and
 version control is where that happens.
 
-    rowspec     rows    opaque row ids                  draft 0, implemented
+    rowspec     rows    opaque row ids                  draft 0, released
     blockspec   blocks  deliberately no minted ids      design pass
     nodespec    nodes   named, not positional           not started
 
@@ -105,10 +105,13 @@ a repository with no required checks has no up-to-date requirement either. Say
 
 **CodeQL runs on every repository** through GitHub's default setup, and is
 deliberately **not** required. Its check names are generated from language
-detection — `blockspec` currently detects no language and produces no `Analyze`
-run at all — so requiring them would be a rule whose contexts move underneath it,
-and would deadlock `blockspec` outright. Clause 1 says *every* workflow: for
-CodeQL that means read it, because the gate will not.
+detection, and a repository in which no language is detected produces no
+`Analyze` run at all — so requiring them would be a rule whose contexts move
+underneath it, and would deadlock such a repository outright. Which
+repositories that is today:
+`gh api repos/kindspec/<repo>/code-scanning/default-setup --jq .languages`.
+Clause 1 says *every* workflow: for CodeQL that means read it, because the gate
+will not.
 
 Nobody bypasses: the bypass list is empty on all six, and that includes org
 owners. A rule that its author can step around is the thing this project exists
@@ -169,10 +172,28 @@ retrospective log of real push evaluations:
     gh api repos/OWNER/REPO/rulesets/rule-suites/<id>
 
 The first lists actual attempts with `pass`/`fail`; the second names which rule
-failed and why. Every ruleset in this org was confirmed by pushing to `main`,
-watching it be rejected, and finding the `fail` recorded there — including the
-one repository whose ruleset was correct but had never been exercised, which is
-a distinction this section exists to refuse.
+failed and why. Three rulesets — `.github`, `rowspec` and `nodespec` — were
+confirmed that way: a push to `main` was rejected and the `fail` was recorded
+there, as these rule suites:
+
+    repo        rule-suite id   pushed_at
+    .github     4014197203      2026-09-10T00:19:14-04:00
+    rowspec     4014189520      2026-09-10T00:18:20-04:00
+    nodespec    4014318589      2026-09-10T00:34:02-04:00
+
+While the log still holds them, `gh api
+repos/kindspec/<repo>/rulesets/rule-suites/<id>` shows each one. The other three — `research`, `kindkit` and `blockspec` — carry the same
+rules (plus `kindkit`'s required check) but have **no recorded rejection**, so
+by this section's own standard they are configured, not verified. A ruleset
+that is correct but has never been exercised is exactly the distinction this
+section exists to refuse; do not report it as verified until a rejection is on
+record. Check with:
+
+    gh api 'repos/kindspec/<repo>/rulesets/rule-suites?rule_suite_result=fail&time_period=month'
+
+The log reaches back a month at most, so an older rejection drops out of it —
+which is why the ids above are written down. Record a new rejection the same
+way.
 
 Large or load-bearing changes take **more than one review pass**. A change to
 the runner, the mutation gate, the case-tree format, or anything a published
