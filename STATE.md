@@ -205,11 +205,11 @@ These concern the public work and are settled. Each draft named below is
 approved by the owner **before** it is committed.
 
 - **blockspec#2 runs under a superseding pre-registration, written first.** It
-  starts with the single-edit and uniqueness measurements on the three named
-  corpora. Those are the two questions the decision turned on: whether `LOG.md`
-  §9's one-author, one-commit shape occurs there, and whether those corpora
-  carry the repeated single-line blocks on which the oracle is undecidable
-  (`LOG.md` §6.2). blockspec's `spike/LOG.md` §11 still records the question as
+  starts by running research's two D8 harnesses on the three corpora that
+  blockspec's `spike/PRE-REGISTRATION.md` §5.1 names and pins: the single-edit
+  anchor analysis (`experiments/D8-identity/anchor_eval3.py`) and the
+  quote-uniqueness measurement (`experiments/D8-identity/e4_uniqueness.py`).
+  blockspec's `spike/LOG.md` §11 still records the question as
   open; it is behind this file until the superseding draft lands.
 - **nodespec gets its own pre-registered spike now**, once blockspec#2 is set
   up. It no longer waits for blockspec to resolve.
@@ -218,13 +218,11 @@ approved by the owner **before** it is committed.
   tiering (blockspec `PRE-REGISTRATION.md` §4.1). It has no access to the
   authoring conversation, and its worktree lacks what it must not see. What
   each such agent was given is logged in the repository it works on.
-- **rowspec's spec-shape questions are deferred, to be tracked as issues**:
-  conformance fixtures for CSV mode, and stable identifiers for the §9
-  refusals. The first is raised in rowspec#59, which records that there are no
-  CSV fixtures under `conformance/`. The second **has no issue yet**: `gh api
-  'repos/kindspec/rowspec/issues?state=all&per_page=100' --jq '.[].title' |
-  grep -i identif` prints nothing, and rowspec has fewer than 100 issues and
-  pull requests, so that one page is all of them.
+- **rowspec's spec-shape questions are deferred, and tracked**: conformance
+  fixtures for CSV mode in rowspec#59, which records that there are none under
+  `conformance/`; stable identifiers for the §9 refusals in rowspec#61, which
+  counts the parse cases that accept a refusal for any reason (`grep -rl
+  '"refusal_contains": ""' conformance/cases | wc -l`, run in rowspec).
 - **kindkit is tagged `v0.1.0`, and PyPI comes later.** The tag peels to
   `bf716e3` — kindkit `main` on 2026-10-07, one docs commit after rowspec's pin
   `a26f8f8` (`git ls-remote --tags https://github.com/kindspec/kindkit`;
@@ -254,9 +252,11 @@ In order:
    `spike/README.md` and `LOG.md` §6.2 say the arm "needs a superseding oracle
    statement before its prose numbers can be believed", because TLLC is
    confident on repeated single-line blocks where the truth is undecidable
-   (`spike/harness/oracle_limitation.py`). The single-edit and uniqueness
-   measurements come first because they say whether either problem arises in
-   these corpora at all. The owner approves the draft before it is committed;
+   (`spike/harness/oracle_limitation.py`). It opens with research's D8
+   single-edit anchor analysis (`anchor_eval3.py`) and quote-uniqueness
+   measurement (`e4_uniqueness.py`) on the §5.1 corpora, at §5.1's pins. §3
+   above covers the directory names and working directory both scripts assume.
+   The owner approves the draft before it is committed;
    nothing runs under it before then.
 2. **nodespec's existential spike — draft its pre-registration**, once
    blockspec#2 is set up. The owner approves the draft before commit. Its brief
