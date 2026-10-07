@@ -11,6 +11,11 @@ the ceiling.
 
 ## 1. What this org is
 
+**[STATE.md](STATE.md) is where the work stands** — current figures and the
+command behind each, what comes next in order, what a fresh machine needs, the
+traps that have already cost time, and what is decided and must not be
+re-litigated. Read it after this file and before picking anything up.
+
 A specification and conformance suite per artifact kind. Knowledge artifacts —
 tables, documents, canvases — are edited by several people over years, and
 version control is where that happens.
