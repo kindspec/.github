@@ -23,7 +23,7 @@ body:
       render: shell
     validations:
       required: true
-  - type: input
+  - type: textarea
     id: inputs
     attributes:
       label: Inputs, pinned

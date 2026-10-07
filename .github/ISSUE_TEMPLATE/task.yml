@@ -1,0 +1,30 @@
+name: Task or adjudication
+description: Work to do, or a non-empirical question to settle.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A question measurement cannot settle is argued from both sides and the
+        adjudication is written into the repository with its reversal cost
+        ([AGENTS.md](https://github.com/kindspec/.github/blob/main/AGENTS.md) §4).
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: The work, or the question to adjudicate.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it unblocks or decides, and what it depends on.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: What would have to be true to close this — including any check that must be seen to fail first.
+    validations:
+      required: true
