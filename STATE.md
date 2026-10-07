@@ -138,12 +138,13 @@ earn a format is the likelier draft 0, and it is a result rather than a failure.
 In order:
 
 1. **blockspec#2 — run the duplicate-heavy arm.** The corpora are named and
-   pinned in `spike/PRE-REGISTRATION.md` §5.1, which arrives with blockspec#11 —
-   check that it has merged before relying on the reference. Ranked by evaluable
+   pinned in `spike/PRE-REGISTRATION.md` §5.1. Ranked by evaluable
    human-authored cases: `kubernetes/website` is the largest arm at roughly 800
-   extrapolated from a 400-merge sample, `cncf/toc` the cleanest at 71 with no
-   bot involvement, `github/site-policy` a supporting arm at about 29 and the
-   only legal-text coverage. Nothing blocks this.
+   — an **upper** estimate extrapolated from the most recent 400 of 23,473
+   merges, so enumerate before quoting it; `cncf/toc` the cleanest at 71 with no
+   bot involvement at all; `github/site-policy` a supporting arm at **21 to 25**
+   and the only legal-text coverage. Read §5.1 for why that last one is a range
+   and not a number. Nothing blocks this.
 2. **Tier the 85 candidates, blind.** Needs someone who has not seen the
    frequencies, per §4.1.
 3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
@@ -176,34 +177,31 @@ checks the translation against a real engine. Without `node` on `PATH` that test
 skips, and a mutation exists specifically so a skip fails the gate rather than
 passing quietly. Nothing else needs it.
 
-**Corpora.** Clone these at the pins; they live outside the repositories and are
-gitignored:
+**Corpora.** They live outside the repositories and are gitignored. **Clone
+these pins, which are the ones D8's stated corpus sizes resolve to** — not the
+ones `research/design-findings/D8-identity.md` §3 records, which are wrong for
+two of the three and are tracked as kindspec/research#9:
 
-| corpus | source | pin |
-|---|---|---|
-| `rust-book` | `github.com/rust-lang/book` | `1500248d8f230566e4ec9f27fcbb8fe9e2898ab1` |
-| `obsidian-help` | `github.com/obsidianmd/obsidian-help` | `327a782e90481268361b5ccccdb0c224b2b13fe6` |
-| `commonmark-spec` | `github.com/commonmark/commonmark-spec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` |
+| corpus | source | pin | `rev-list --count` |
+|---|---|---|---|
+| `rust-book` | `github.com/rust-lang/book` | `917544888a55e4da7109bdba8c88c893c0da70f4` | 6286 |
+| `obsidian-help` | `github.com/obsidianmd/obsidian-help` | `a3985b585904ddb9f109bd80849b378085308c15` | 2623 |
+| `commonmark-spec` | `github.com/commonmark/commonmark-spec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` | 1848 |
+
+The counts are in the table so you can check the pin rather than trust it. D8 §1
+states 6,286 / 2,623 / 1,848; these are the commits where `git rev-list --count`
+equals that. These are also what `blockspec/spike/harness/corpora.json` pins, and
+its control arm reproduces D8's arms line for line at them — which is the
+evidence that they are the trees D8 ran on. §4 has the full argument and
+research#9 the fix.
 
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
 
-**blockspec's control arm pins two of these differently, and that is deliberate
-rather than a mistake to correct.** Its harness records its own pins in
-`spike/harness/corpora.json`, not in §5.1:
-
-| corpus | research §3 | blockspec harness |
-|---|---|---|
-| `rust-book` | `1500248d` | `917544888a55e4da7109bdba8c88c893c0da70f4` |
-| `obsidian-help` | `327a782e` | `a3985b585904ddb9f109bd80849b378085308c15` |
-| `commonmark-spec` | `3da93942` | same |
-
-A fresh machine that checks the table above out at research's pins and then runs
-blockspec's control gate is measuring different trees from the ones that gate was
-written against, and the harness prints its pin without ever comparing it to
-`corpora.json`, so the mismatch is silent. Read `corpora.json` before running the
-control arm. §5.1 of the pre-registration lists only the three duplicate-heavy
-corpora, with their own pins.
+**Do not take research §3's pins as canonical, and do not "fix" the harness to
+match them** — that is backwards, and it is the mistake three previous
+corrections made. §5.1 of the pre-registration lists the three duplicate-heavy
+corpora separately, with their own pins.
 
 `research/CORPORA.md` lists everything the findings cite, including the benchmark
 archives the differential used.
