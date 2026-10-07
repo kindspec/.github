@@ -56,7 +56,7 @@ on the last three questions where the two disagreed.
 ### kindkit — complete, and proven against a real consumer
 
     73 mutations, 73 caught, 0 survived, 0 broken    just mutants
-    109 passed                                        just test
+    109 passed                                        just test   (1 skips without node)
     20 files clean                                    just check
     6 cases in its own kv tree                        just cases
 
@@ -86,9 +86,9 @@ reference implementation is not Python gets the runner and not the gate.
 
 ### blockspec — pre-registration frozen, harness validated, no verdict
 
-    SELECTION-GUARD SELFTEST: PASS      python3 harness/prose_merge.py --selftest-selection
-    SELFTEST: PASS                      python3 harness/check_control_gate.py --selftest
-    PLANTED-CASE GATE: PASS             python3 harness/prose_merge.py --plant --d8-dir <research>/experiments/D8-identity
+    SELECTION-GUARD SELFTEST: PASS      python3 spike/harness/prose_merge.py --selftest-selection
+    SELFTEST: PASS                      python3 spike/harness/check_control_gate.py --selftest
+    PLANTED-CASE GATE: PASS             python3 spike/harness/prose_merge.py --plant --d8-dir <research>/experiments/D8-identity
 
 Verified green on 2026-10-06. The harness is **pure stdlib, run with `python3`
 directly** — no `uv`, no justfile, so it works where the other two repos need a
@@ -161,7 +161,7 @@ In order:
 
 Twenty-eight issues are open, each with acceptance criteria and a red-before-green
 requirement. The ones that touch a gate are `rowspec#39`, `#40`, `#43`, `#48`,
-`#49` and `kindkit#8` through `#12`. `rowspec#44` and `#45` were also
+`#49`, `#47` and `kindkit#3`, `#4`, `#8` through `#12` — check the repos' own gate labels rather than trusting this list. `rowspec#44` and `#45` were also
 gate defects and are **closed** — the kindkit adoption fixed both.
 
 ---
@@ -173,6 +173,10 @@ gate defects and are **closed** — the kindkit adoption fixed both.
 `.pre-commit-config.yaml` and all work lands by PR. A real `git` binary is a hard
 dependency of every conformance suite, because the central claim is about what
 stock git does.
+
+**The three blockspec commands run from `blockspec/`**, and `uv sync` needs
+network reach to `github.com` — `rowspec/pyproject.toml` has `kindkit` as a git
+dependency in its dev group, so an offline sync fails there.
 
 **First command in rowspec and kindkit is `uv sync`** (or `just setup`, which is
 that one line). It creates `.venv`, which is **gitignored and not committed** —
@@ -186,42 +190,37 @@ checks the translation against a real engine. Without `node` on `PATH` that test
 skips, and a mutation exists specifically so a skip fails the gate rather than
 passing quietly. Nothing else needs it.
 
-**Corpora.** They live outside the repositories and are gitignored. **D8 was run
-against two clones a day apart, and you need to know which arm you are
-reproducing before you pick a pin.** D8 §3 states the dates; it gives only the
-second clone's pins, which is kindspec/research#9.
+**Corpora.** They live outside the repositories and are gitignored. **Clone the
+pins in `research/design-findings/D8-identity.md` §3. They produce all four
+committed artifacts, byte for byte.**
 
-| clone | `rust-book` | `obsidian-help` | `cmspec` | reproduces |
-|---|---|---|---|---|
-| 2026-09-09 | `917544888a55` | `a3985b58` | `3da93942` | `results-anchor*.txt`, D8 §3.1/§3.2, and blockspec's control arm |
-| 2026-09-10 | `1500248d` | `327a782e` | `3da93942` | `results-e4.txt`, D8 §3.3 |
+| corpus | pin | source |
+|---|---|---|
+| `rust-book` | `1500248d8f230566e4ec9f27fcbb8fe9e2898ab1` | `github.com/rust-lang/book` |
+| `obsidian-help` | `327a782e90481268361b5ccccdb0c224b2b13fe6` | `github.com/obsidianmd/obsidian-help` |
+| `cmspec` | `3da939428d80f146f270cd1765e4ba462e96bb1b` | `github.com/commonmark/commonmark-spec` |
 
-Full SHAs: `917544888a55e4da7109bdba8c88c893c0da70f4`,
-`a3985b585904ddb9f109bd80849b378085308c15`,
-`1500248d8f230566e4ec9f27fcbb8fe9e2898ab1`,
-`327a782e90481268361b5ccccdb0c224b2b13fe6`,
-`3da939428d80f146f270cd1765e4ba462e96bb1b`. Sources are
-`github.com/rust-lang/book`, `github.com/obsidianmd/obsidian-help`,
-`github.com/commonmark/commonmark-spec`.
+Verified: `anchor_eval3.py` is byte-identical to `results-anchor3.txt` at these
+trees, and `e4_uniqueness.py` at 20, 40 and 120 to `results-e4.txt`.
 
-Measured, so you can check a pin rather than trust it: `e4_uniqueness.py 40` on
-`obsidian-help` gives `files=176 prose=2526` at `327a782e`, matching
-`results-e4.txt` byte for byte, and `files=175 prose=2515` at `a3985b58`.
-`anchor_eval3.py` gives `anchors=384` at `a3985b58` and `343` at `327a782e`.
-**Neither pin is wrong — they are different clones, each correct for its own
-artifact.** §1's header sizes (6,286 / 2,623 / 1,848) describe the 09-09 clone,
-which is how blockspec's harness found it, and `rev-list --count` therefore
-cannot tell the two apart. The 09-09 set is what
-`blockspec/spike/harness/corpora.json` pins.
+**`blockspec/spike/harness/corpora.json` pins different commits on purpose, and
+they are not an alternative set to reproduce research with.** It pins
+`obsidian-help` at `a3985b58` and `rust-book` at `917544888a55` to reconstruct
+an *earlier, uncommitted* pass — chosen by matching the commit counts in D8 §1's
+header, which describe that earlier clone. Its control arm therefore prints
+`anchors=384` where `results-anchor3.txt` prints `343`, and both are right about
+their own tree. D8 §3.2 states this directly: *"The 384 line belongs to
+`a3985b58` alone."* Use `a3985b58` only when running blockspec's control arm.
 
-**Name the directories `rust-book`, `obsidian-help` and `cmspec`** — not
-`commonmark-spec`. `e4_uniqueness.py:12` and `anchor_eval3.py` hardcode those
-relative paths under a `corpora/` directory. Get it wrong and
+**Name the directories `rust-book`, `obsidian-help` and `cmspec`.**
+`e4_uniqueness.py:12` and `anchor_eval3.py:87` hardcode those paths under
+`corpora/`, **relative to the process working directory** — so invoke them from
+that parent directory by absolute script path. Get either wrong and
 `e4_uniqueness.py` prints `files=0  blocks>=40ch=0`, an empty table, **and exits
 0** — §2.2's own named failure, in this project's own script.
 
 `run_control.sh` takes `CORPORA` and `D8_DIR` as **environment variables**, not
-flags. `--d8-dir` is `prose_merge.py`'s flag and will not work on the former.
+flags. `--d8-dir` is `prose_merge.py`'s flag.
 
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
@@ -256,39 +255,34 @@ directly.
 
 ## 4. Traps that have already cost time
 
-**"Pin" means two different trees, and both are right.** D8 was run against two
-clones a day apart — `results-anchor*.txt` on 2026-09-09, `results-e4.txt` on
-2026-09-10 — and D8 §3 says so, at `:253-255`, immediately above a pin block that
-gives only the second one. So research §3 pins `obsidian-help` at `327a782e` and
-blockspec's harness pins `a3985b58`, seven first-parent commits apart, and
-neither is a mistake:
+**`anchors=384` and `anchors=343` are the same arm on two different trees, and
+the committed artifact is 343.** `results-anchor3.txt:12` prints 343, produced at
+research §3's pins. `384` comes from `obsidian-help` at `a3985b58`, which is
+blockspec's reconstruction of an earlier uncommitted pass. D8 §3.2 says it in as
+many words — *"The 384 line belongs to `a3985b58` alone"* — and
+`blockspec/spike/results/corpus-drift.txt` tabulates both. **Always name the SHA
+and say which artifact you are reproducing.**
 
-    arm                            a3985b58        327a782e
-    anchor_eval3.py  anchors=      384  matches     343
-    e4_uniqueness.py 40  prose=    2515            2526  matches results-e4.txt
+**Do not use `git rev-list --count` to decide which pin is right.** D8 §1's
+header states 6,286 / 2,623 / 1,848 and those counts match `a3985b58` and
+`917544888a55` — the *earlier* clone, not the one §3 pins and not the one the
+committed artifacts came from. The header and the pin block describe different
+trees, which is all kindspec/research#9 is about.
 
-Each reproduces its own artifact exactly and the other's not at all. §3's defect
-is that one pin block is presented as the provenance for all four result files.
-Tracked as kindspec/research#9, which **does not change any pin** — it records
-both clones. §3 of this document has the table; read it before reproducing
-anything.
+I got this wrong twice in one day, both times from that count. First I claimed
+§3's pins were wrong and filed research#9 asking for them to be replaced. Then,
+told that `results-e4.txt` only reproduces at §3's pin, I invented a "two clones
+a day apart" story that kept the counts meaningful and assigned the anchor files
+to `a3985b58` — which the commit dates refute outright (`a3985b58` is
+2026-08-25; a clone made in September gets `327a782e`). Both versions of
+research#9's acceptance would have written a false claim into the research repo,
+the second into a file that was already correct.
 
-**Do not settle this with `git rev-list --count`.** It looks decisive and is not.
-D8 §1's header states 6,286 / 2,623 / 1,848, and the counts at the harness pins
-equal those exactly — because §1's header describes the 09-09 clone. The count
-therefore matches the anchor clone whichever artifact you are chasing, so it
-cannot distinguish "the tree this arm ran on" from "the tree §1's header was
-written against". I read that match as proof that §3 was wrong on two pins,
-wrote it into this section, and filed research#9 asking for §3's pins to be
-replaced — whose first acceptance criterion would have repinned §3 to the 09-09
-clone and silently invalidated §3.3's 2,526 denominator, the evidence under
-blockspec's frozen §5 prose-identity decision. That issue's original criterion
-also said not to re-run the arms. Re-running them is what caught it, in two
-commands.
-
-Which is this project's own recurring defect, in the document that catalogues it:
-a check that returns the same answer in both cases, read as evidence for one.
-**Always name the SHA, and say which artifact you are reproducing.**
+The lesson is not about pins. A check that returns the same answer whichever
+hypothesis is true cannot choose between them, and reading it as support for one
+is this project's recurring defect — here committed twice, in the document that
+catalogues it, by the person maintaining the catalogue. `diff` against the
+committed artifact is the check that discriminates; it took two commands.
 
 **A squash merge discards branch commit messages.** Every repository here has
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
