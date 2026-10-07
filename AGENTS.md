@@ -50,10 +50,18 @@ their own work reported full coverage, and an adversary then found silently
 wrong cases in the same code.
 
 **Enforcement is the filesystem, not the prompt.** An agent authoring
-conformance cases works in a git worktree that does not contain the
-implementation at all. It cannot read `reference/` because `reference/` is not
+conformance cases works in a directory that does not contain the
+implementation at all, nor the history that holds it. It cannot read `reference/` because `reference/` is not
 there. An agent that finds itself able to read the implementation it is writing
 cases against must stop and say so rather than proceed carefully.
+
+In practice: a fresh agent counts as an independent author when it gets no copy
+of the authoring conversation and works in an **exported directory** holding
+only the permitted files and no `.git` — a `git archive` of the allowed paths.
+A git worktree is not a barrier: it shares the object store, so `git show
+main:<path>` prints a file the worktree has deleted. The stop rule above still
+applies. Network access is an honour-system boundary, because every kindspec
+repository is public. Log in the repository what the agent was given.
 
 ### 2.2 A check that cannot fail must never report a pass
 
