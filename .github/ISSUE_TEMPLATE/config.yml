@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: The kindspec agent contract
+    url: https://github.com/kindspec/.github/blob/main/AGENTS.md
+    about: The rules every issue and pull request here is held to.
+  - name: State of play
+    url: https://github.com/kindspec/.github/blob/main/STATE.md
+    about: Where the work stands and what comes next — read before filing.
