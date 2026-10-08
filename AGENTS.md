@@ -21,7 +21,7 @@ tables, documents, canvases — are edited by several people over years, and
 version control is where that happens.
 
     rowspec     rows    opaque row ids                  draft 0, released
-    blockspec   blocks  deliberately no minted ids      design pass
+    blockspec   blocks  deliberately no minted ids      spike, no verdict
     nodespec    nodes   named, not positional           not started
 
 Each kind is named after its **unit of identity**, because identity is the hard
@@ -99,8 +99,9 @@ rewritten or the branch deleted, and only squash merges are allowed.
 
     repo        required checks                                            strict
     rowspec     conformance, xlsx-extra,                                   yes
-                passes-on-a-good-tree, fails-on-a-broken-total
-    kindkit     check                                                      yes
+                passes-on-a-good-tree, fails-on-a-broken-total,
+                kind / conformance
+    kindkit     check, kind / conformance                                  yes
     blockspec   none — no workflows of its own yet                         n/a
     nodespec    none — no workflows of its own yet                         n/a
     research    none — no workflows of its own yet                         n/a
@@ -294,12 +295,24 @@ architecturally.
 
 ## 6. Licensing
 
-Per directory, deliberately.
+Per directory, deliberately. rowspec's split, from its root `LICENSE`:
 
     SPEC.md, docs/            CC-BY-4.0
-    conformance/cases/        CC0-1.0
+    docs/ci/rowspec-check.yml CC0-1.0
+    conformance/cases/,
+    conformance/reserved/     CC0-1.0
     conformance/*.py          MIT
-    reference/, tests/        Apache-2.0 OR MIT
+    reference/, export/,
+    tests/, action.yml,
+    .github/workflows/,
+    justfile                  Apache-2.0 OR MIT
+
+The CI workflow a user is told to copy into their own repository is CC0, like
+the fixtures, so copying it carries no attribution obligation. Each repository's
+root `LICENSE` is authoritative for that repository, and they differ: kindkit
+puts its code and workflows under MIT and its case-tree convention under CC0,
+and this repository puts `scripts/` under MIT and everything else under
+CC-BY-4.0.
 
 Fixtures are CC0 with no prose attached so they can be vendored into an
 implementation in any language under any licence. Embedding test cases inside a
