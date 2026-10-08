@@ -1,0 +1,45 @@
+name: Spike or pre-registration
+description: An experiment whose result decides what gets built — including whether a kind should exist.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The criterion for each outcome is written down and committed **before** the
+        experiment runs, so the bar cannot move afterwards. A negative finding is a
+        deliverable ([AGENTS.md](https://github.com/kindspec/.github/blob/main/AGENTS.md) §4).
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What the spike decides, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: criterion
+    attributes:
+      label: Pre-registered criterion
+      description: >-
+        Link the committed pre-registration by path and commit, or say it is still to be
+        written. It names what counts as found, what counts as not found, and what each
+        outcome publishes as.
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs, pinned
+      description: Each corpus or dataset, with its source and the commit it will be read at.
+    validations:
+      required: true
+  - type: textarea
+    id: independence
+    attributes:
+      label: Who must not see what
+      description: >-
+        Any judgement made blind — tiering, case authoring — and the barrier that keeps it
+        blind (AGENTS.md §2.1). Write "none" if nothing is.
+  - type: textarea
+    id: supersedes
+    attributes:
+      label: Supersedes
+      description: An earlier pre-registration this replaces, and why. A frozen one is superseded, never edited.
