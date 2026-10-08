@@ -60,14 +60,20 @@ tree against kindkit's convention, the suite, the second implementation, and
 the mutation gate, judged by the gate's own report.
 `tests/test_pins.py` fails if the workflow's commit and the package pin differ.
 `action-selftest.yml` supplies `passes-on-a-good-tree` and
-`fails-on-a-broken-total`, against the checkout (rowspec#51). The workflows run
-on `push` to `main` only, plus `pull_request`, so each required check has one
-producer (rowspec#67). Every action is pinned to a commit, and a test keeps it
-so (rowspec#71).
+`fails-on-a-broken-total`, against the checkout (rowspec#51). `check.yml` and
+`action-selftest.yml`, the two workflows that produce required checks, run on
+`push` to `main` only, plus `pull_request`, so each required check has one
+producer (rowspec#67). `release.yml` runs on `v*` tags, and
+`action-published.yml` only when called by it or dispatched by hand. Every
+action is pinned to a commit, and a test keeps it so (rowspec#71).
 
 **Landed since v0.2.0**, all on `main` (`gh api
-repos/kindspec/rowspec/compare/v0.2.0...main --jq .ahead_by` prints 19):
+repos/kindspec/rowspec/compare/v0.2.0...main --jq .ahead_by` prints 19). These
+are highlights; `CHANGELOG.md` `[Unreleased]` is authoritative.
 
+- **The probe.** The mutation probe calls `kindkit.probe_command` and reads the
+  runner's `--report-json` verdict rather than parsing its printed summary
+  (rowspec#57).
 - **Fixes.** CSV mode warns on a lone CR and accepts CRLF, per SPEC §13
   (rowspec#60). The runner exits 2 when the implementation will not import
   (rowspec#62). The import-boundary test sees `__import__` and `import_module`
@@ -83,15 +89,18 @@ repos/kindspec/rowspec/compare/v0.2.0...main --jq .ahead_by` prints 19):
   it could not fail (rowspec#68).
 - **Licensing.** SPDX headers, per-directory `LICENSE` files, and
   `tests/test_licensing.py` checking both (rowspec#74).
-- **Docs.** How to run the suite from the sdist, and why pip cannot
-  (rowspec#75). rowspec#47 stays open.
+- **CI and tooling.** The extra-absent guard runs with `--exact`, like the
+  step it guards (rowspec#66), and pre-commit runs the ruff the project locks
+  (rowspec#73).
+- **Docs.** Stale claims about refusals, reserved cases and `just test`
+  corrected (rowspec#58). How to run the suite from the sdist, and why pip
+  cannot (rowspec#75). rowspec#47 stays open.
 - **The kindkit pin.** Moved to `bf716e3`, `v0.1.0`'s commit (rowspec#76),
   then to `8e21b55` (rowspec#77), then the adoption of kindkit's workflow above
   (rowspec#78).
 
-`CHANGELOG.md` `[Unreleased]` is the authoritative list. **A release of these
-is being prepared. Tagging needs the owner's approval first**, because a `v*`
-tag is what publishes to PyPI. Until then, `v0.2.0` is the release to point at
+**A release of these is being prepared, as 0.3.0 (rowspec#80, open). Tagging
+needs the owner's approval first**, because a `v*` tag is what publishes to PyPI. Until then, `v0.2.0` is the release to point at
 (`gh release list -R kindspec/rowspec`; `curl -s
 https://pypi.org/pypi/rowspec/json` gives version `0.2.0` and extra `xlsx`).
 
@@ -167,12 +176,14 @@ Verified green on 2026-10-08 at `f59c109`, in a fresh clone. The harness is
 **pure stdlib, run with `python3` directly** — no `uv`, no justfile.
 
 **`spike/PRE-REGISTRATION-2.md` is merged (blockspec#15) and binding for
-blockspec#2. The owner approved it on 2026-10-08.** It supersedes
+blockspec#2. The owner approved it on 2026-10-07, before it merged** (the
+merge is at 2026-10-07T23:28:22Z: `gh api repos/kindspec/blockspec/pulls/15
+--jq .merged_at`). It supersedes
 `PRE-REGISTRATION.md`, which stays unchanged as the record. Its §0 lists the
 twenty choices the approval covers, each with its alternative. **Its own header
 still reads "Status: DRAFT, for owner approval", and `spike/LOG.md` §13 still
-says it is not binding until approved.** Both lines predate the approval, so
-read them as stale.
+says it is not binding until approved.** Both were written before the approval,
+so read them as stale.
 
 **The cheap measurement has landed** (blockspec#14). It ran research's D8
 anchor and uniqueness harnesses on the §5.1 corpora, with output in
@@ -182,7 +193,8 @@ itself; it is input to pre-registration 2.
 **The harness for pre-registration 2 is in review on a draft pull request**
 (blockspec#16, "do not merge"). Under that document's §9, the harness at its
 validation commit is the implementation, and that commit does not exist yet.
-**No arm has run** — not Arm 0, E, S, M or R, not the exporter, not the tierer.
+**No arm has run** — not Arm 0, E, S or M (§6.5), nor the R mechanism, the
+exporter or the tierer.
 
 **The first run's 85 merge-arm records are not tiered.** That is
 pre-registration 2 §0 item 17, approved, and it reverses item 3 of the previous
@@ -204,9 +216,10 @@ Not a specification. It is the design record the three briefs cite, published so
 those citations resolve. `anchor_eval*` and `e4_uniqueness` output are committed;
 §3.1–3.3 can be reproduced.
 
-**research#1, #4, #6 and #9 are closed; research#15 is open.** research#15 is
-about the D8 harnesses: they neither record nor check which commit each corpus
-is at. Third-party sample files are attributed in `NOTICE`, with full licence
+**research has no open issues** (`gh issue list -R kindspec/research --state
+open` prints nothing). research#15, that the D8 harnesses neither recorded nor
+checked which commit each corpus was at, was settled by research#16; §3 says
+what that changes. Third-party sample files are attributed in `NOTICE`, with full licence
 texts in `LICENSES/` (research#13). `CORPORA.md` records that committed output
 quotes Enron content (research#14). The D8 harnesses fail loudly when they
 cannot read a corpus (research#11).
@@ -256,8 +269,13 @@ api repos/kindspec/rowspec/environments/pypi/deployment-branch-policies`). That
 is read back from configuration; no refusal has been observed yet, which is why
 the issue is open.
 
-**Required checks changed on rowspec and kindkit**, each gaining `kind /
-conformance`; `AGENTS.md` §3.1 has the table. Nothing else above has changed.
+**Re-checked on 2026-10-08**, by reading configuration back:
+`security_and_analysis` shows secret scanning and push protection `enabled` on
+all six repositories; `gh api orgs/kindspec` shows two-factor required and both
+new-repository defaults `true`; and the `pypi` environment's only deployment
+policy is `tag v*`. Nothing above changed. **Required checks did change** on
+rowspec and kindkit, each gaining `kind / conformance`; `AGENTS.md` §3.1 has the
+table.
 
 ---
 
@@ -313,7 +331,7 @@ In order:
    (.github#12) cannot go green until `check_required_checks.py` expands a
    called workflow's jobs into `<caller> / <called job>` contexts (§1,
    `.github`). .github#3 stays open for it.
-4. **rowspec's next release**, once the owner approves tagging (§1).
+4. **rowspec 0.3.0** (rowspec#80), once the owner approves tagging (§1).
 5. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
@@ -332,7 +350,7 @@ since the last version of this file:
 - kindkit: every issue it had open — kindkit#3, #4, #9, #10, #11, #15 and
   #17 (`gh issue list -R kindspec/kindkit --state open` prints nothing);
 - rowspec: rowspec#39, #40, #42, #43, #48, #49, #52, #56 and #59;
-- research: research#4 and #6.
+- research: research#4, #6 and #15.
 
 ---
 
@@ -395,10 +413,19 @@ flags. `--d8-dir` is `prose_merge.py`'s flag.
 `--filter=blob:none` is enough for anything that only reads trees; the anchor and
 uniqueness harnesses need working trees, so check out at the pin.
 
-**blockspec#2's corpora** — `kubernetes/website`, `cncf/toc` and
-`github/site-policy` — are pinned in `blockspec/spike/PRE-REGISTRATION.md` §5.1,
-and pre-registration 2 §6.2 says how each is read. They are in no `research`
-file, `CORPORA.md` included.
+**The D8 harnesses refuse a corpus that is off its pin** (research#16).
+`experiments/D8-identity/corpus_pin.py` holds the three pins above. Before
+reading a corpus, every D8 harness prints its HEAD to stderr, so stdout stays
+byte-identical to the committed results. It exits non-zero when HEAD is not
+the pin, or when tracked files differ from HEAD; untracked files do not count.
+`D8_ALLOW_UNPINNED=1` overrides it for a run meant for another tree, such as
+blockspec's `a3985b58` control arm, and prints a warning naming the pin.
+
+**blockspec#2's corpora are seven arms over six repositories**, in
+pre-registration 2 §6.2: `rust-book`, `obsidian-help` and `cmspec` at D8 §3's
+pins above, and `kubernetes/website` (as `k8s-en` and `k8s-l10n`), `cncf/toc`
+and `github/site-policy` at the first registration's §5.1 pins. Those last three
+are in no `research` file, `CORPORA.md` included.
 
 `research/CORPORA.md` lists everything the findings cite, including the benchmark
 archives the differential used.
@@ -521,12 +548,13 @@ installed code, use a private cache and copies:
 `UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy uv sync`. That is a different
 case from §3's sandbox note, which is about a cache you cannot write at all.
 
-**`gh pr edit` and `gh issue view` fail with the gh 2.46.0 on this machine**
-with a GraphQL error about Projects (classic) — a property of that gh version,
+**`gh pr edit`, `gh pr view` and `gh issue view` fail with the gh 2.46.0 on
+this machine**, exiting 1 with a GraphQL error about Projects (classic) — a property of that gh version,
 not of the repositories. Use the REST API: `gh api -X PATCH
 repos/kindspec/<repo>/pulls/<n> -F body=@file` to edit a pull request's body,
-and `gh api repos/kindspec/<repo>/issues/<n>` plus `.../issues/<n>/comments` to
-read an issue.
+`gh api repos/kindspec/<repo>/pulls/<n>` to read one, and `gh api
+repos/kindspec/<repo>/issues/<n>` plus `.../issues/<n>/comments` to read an
+issue.
 
 **GitHub matches a closing keyword even when the sentence negates it.**
 kindkit#14's body — which became its squash commit — has the heading
@@ -537,8 +565,9 @@ Never write `close`, `closes`, `fix`, `fixes`, `resolve` or `resolves`
 followed by `#N` in a PR body or a commit message unless that issue should
 close — not even negated: "does not resolve #N" contains `resolve #N` and
 matches. Keep the keyword away from the number, as in `Refs #N (not finished
-here)`, and run that query on every pull request you open: it has caught the
-same heading shape again since.
+here)`, and run that query on every pull request you open. It caught the same
+heading shape again in .github#12, whose first body had the heading "why this
+does not close #3"; the body was rewritten before anything merged.
 
 ---
 
