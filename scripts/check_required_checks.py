@@ -10,16 +10,19 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                runs only on merge_group, push, on pull requests to other
                branches, or in a workflow that is not `active` does not count:
                the context never reports on the PR head
-  TRIGGER      a required job's pull_request (or pull_request_target) `types:`
+  TRIGGER      a required job's pull_request or pull_request_target `types:`
                omit opened or synchronize, so it does not report on every pull
-               request head
+               request head. With both events, only when the events that are not
+               path-filtered do not cover both types between them; each blocked
+               event is then named
   CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
                success: it has a job-level `if:`, or something in its `needs:`
                chain has one or is not itself required. When the skipped job calls
                a reusable workflow, its '<caller> / <called>' contexts never
                report at all, and the merge waits on them instead
   PATH-FILTER  a required job is path-filtered, so it never reports on an
-               unrelated pull request and blocks it forever (AGENTS.md 3.2)
+               unrelated pull request and blocks it forever (AGENTS.md 3.2).
+               With both events, on the same terms as TRIGGER
   DUPLICATE    a required job's workflow also runs on push to some branch other
                than the default: no branch filter, a branches-ignore that leaves
                one, or branches that match one. A pull request head then carries
@@ -34,16 +37,25 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                pull request itself: the required job's workflow runs on both
                pull_request and pull_request_target, or another active workflow
                runs a job of the same context on either, into the default
-               branch. That pair is reported once, from the first workflow by path
+               branch. Each pair of workflows is reported once, whether or not
+               ALLOW names either job
+  TARGET-ONLY  a required check's only producers are pull_request_target jobs.
+               Such a job runs the workflow from the default branch of the base
+               repository, on that branch's code unless it checks out the pull
+               request, so it may be unable to fail because of the pull request
+               (AGENTS.md 2.2). ALLOW on the job, with the reason, accepts it
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 pull_request_target counts as a pull request event: its check runs carry the
-pull request's head sha, and GitHub lists it among the events whose checks
-satisfy a required status check (kindspec/.github#20). It runs the workflow file
-from the base branch, with GITHUB_SHA the base's last commit, so a pull request
-cannot change what such a job does, and the job tests the pull request's code
-only if it checks that out. A pull_request_target job that is meant to gate
-nothing, such as a labeller, belongs in ALLOW with that reason.
+pull request's head sha (kindspec/.github#20), and GitHub's documentation lists it
+among the events whose checks satisfy a required status check (github/docs
+content/pull-requests/how-tos/merge-and-close-pull-requests/
+troubleshooting-required-status-checks.md, lines 55-64 at 60f9f34). It runs the
+workflow file from the default branch of the base repository, with GITHUB_SHA
+that branch's last commit, so a pull request cannot change what such a job does,
+and the job tests the pull request's code only if it checks that out. A
+pull_request_target job that is meant to gate nothing, such as a labeller,
+belongs in ALLOW with that reason. A job in ALLOW still produces its contexts.
 
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
 repositories read; an API or authentication failure; fewer repositories listed
@@ -103,8 +115,8 @@ ALLOW = {}
 ACTIONS_APP_ID = 15368  # GitHub Actions; a context from another app is not a workflow job
 DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unreported
 # Events whose check runs attach to a pull request's head commit and count toward its
-# required checks. pull_request_target runs the base branch's workflow, but its check
-# runs still carry the head sha (kindspec/.github#20).
+# required checks. pull_request_target runs the workflow from the default branch of
+# the base repository, but its check runs still carry the head sha (.github#20).
 PR_EVENTS = ("pull_request", "pull_request_target")
 SAMPLES = 4096  # names tried per branch filter pattern; a pattern with more is not enumerated
 GH = ["gh"]
@@ -413,24 +425,32 @@ def pr_admits(on, branch):
 
 
 def pr_trigger(workflow, branch):
-    """(events that reach a PR into branch, path-filtered, restricted types, why not)."""
+    """(events that reach a PR into branch, [(finding, event, types)], why not).
+
+    An event is blocked by a path filter, or by `types:` without opened and
+    synchronize. The blocks are findings only when the unfiltered events together
+    do not cover opened and synchronize: otherwise every head is still reported.
+    """
     on = _events(workflow)
     events = pr_events(on, branch)
     if not events:
         why = "; ".join(f"{e} excludes '{branch}'" for e in PR_EVENTS if e in on)
         others = [e for e in ("merge_group", "push") if e in on]
         why = why or ("only " + ", ".join(others) if others else None)
-        return [], False, None, why
-    # a filter or a types: restriction matters only if every event that reaches the PR
-    # has one; otherwise another event reports the context on every head
-    configs = [on[e] if isinstance(on[e], dict) else {} for e in events]
-    filtered = all({"paths", "paths-ignore"} & set(c) for c in configs)
-    types = [c.get("types") for c in configs]
-    types = [None if t is None else set(map(str, t if isinstance(t, list) else [t])) for t in types]
-    restricted = None
-    if not any(t is None or DEFAULT_TYPES <= t for t in types):
-        restricted = sorted(set().union(*types))
-    return events, filtered, restricted, None
+        return [], [], why
+    blocked, covered = [], set()
+    for event in events:
+        config = on[event] if isinstance(on[event], dict) else {}
+        types = config.get("types")
+        if types is not None:
+            types = set(map(str, types if isinstance(types, list) else [types]))
+        if {"paths", "paths-ignore"} & set(config):
+            blocked.append(("PATH-FILTER", event, None))
+        else:
+            covered |= DEFAULT_TYPES if types is None else types
+        if types is not None and not DEFAULT_TYPES <= types:
+            blocked.append(("TRIGGER", event, sorted(types)))
+    return events, [] if DEFAULT_TYPES <= covered else blocked, None
 
 
 def jobs_of(workflow):
@@ -582,7 +602,7 @@ def evaluate(snapshot, allow):
         for c in data["required"]:
             required.setdefault(c["context"], c.get("integration_id"))
         stats["required"] += len(required)
-        produced, elsewhere, blind = set(), {}, False
+        produced, elsewhere, blind, pr_events_of = set(), {}, False, {}
         on_push, push_unknown = producers(data, branch, push_duplicates)
         on_pr, pr_unknown = producers(data, branch, pr_admits)
         for path, text in sorted(data["workflows"].items()):
@@ -594,7 +614,7 @@ def evaluate(snapshot, allow):
                 continue
             try:
                 workflow = parse_yaml(text)
-                events, filtered, types, why = pr_trigger(workflow, branch)
+                events, blocked, why = pr_trigger(workflow, branch)
                 jobs = {j[0]: j for j in jobs_of(workflow)}
             except Unsupported as e:
                 incomplete.append(f"{repo}: {path}: not evaluated: {e}")
@@ -622,8 +642,13 @@ def evaluate(snapshot, allow):
             for job_id, context, _, _, unresolved, _ in jobs.values():
                 where = f"{repo}: {path}: job '{job_id}'"
                 if (repo, path, job_id) in allow:
+                    # it still reports its contexts; ALLOW only accepts what it gates
                     stats["pr_jobs"] += 1
                     used.add((repo, path, job_id))
+                    contexts = (
+                        [c[1] for c in calls[job_id].values()] if job_id in calls else [context]
+                    )
+                    produced.update(contexts)
                     continue
                 if unresolved:
                     stats["pr_jobs"] += 1
@@ -640,6 +665,7 @@ def evaluate(snapshot, allow):
                 for unit, context, cid, inner in units:
                     stats["pr_jobs"] += 1
                     produced.add(context)
+                    pr_events_of.setdefault(context, set()).update(events)
                     if context not in required:
                         findings.append(
                             f"UNGATED      {unit} runs on pull requests; "
@@ -660,15 +686,6 @@ def evaluate(snapshot, allow):
                             f"{' and '.join(events)}, so a pull request head can carry "
                             f"'{context}' from two suites and the merge takes either"
                         )
-                    # one finding per pair of workflows, from the first in path order
-                    for other, job, why in on_pr.get(context, []):
-                        if other > path:
-                            findings.append(
-                                f"DUPLICATE    {unit} is required, and {other}: {job} also "
-                                f"produces '{context}' on a pull request into '{branch}' ({why}), "
-                                "so a pull request head can carry it from two suites and the "
-                                "merge takes either"
-                            )
                     # its own push is reported above; another workflow's push is this one
                     for other, job, why in on_push.get(context, []):
                         if other != path:
@@ -698,16 +715,17 @@ def evaluate(snapshot, allow):
                             f"{unit}: not evaluated for a pull request producer in another "
                             "workflow: " + "; ".join(doubts)
                         )
-                    if filtered:
-                        findings.append(
-                            f"PATH-FILTER  {unit} is required but its pull_request "
-                            "trigger is path-filtered"
-                        )
-                    if types:
-                        findings.append(
-                            f"TRIGGER      {unit} is required but pull_request types {types} "
-                            "omit opened or synchronize"
-                        )
+                    for kind, event, types in blocked:
+                        if kind == "PATH-FILTER":
+                            findings.append(
+                                f"PATH-FILTER  {unit} is required but its {event} "
+                                "trigger is path-filtered"
+                            )
+                        else:
+                            findings.append(
+                                f"TRIGGER      {unit} is required but {event} types {types} "
+                                "omit opened or synchronize"
+                            )
                     skip = _skippable(job_id, jobs, required, calls)
                     effect = "can be skipped, which reports success"
                     if cid and skip:
@@ -732,6 +750,24 @@ def evaluate(snapshot, allow):
                 findings.append(
                     f"ORPHANED     {repo}: required check '{context}' is produced by no "
                     f"job that reports on a pull request into '{branch}'{note}"
+                )
+            elif pr_events_of.get(context) == {"pull_request_target"}:
+                findings.append(
+                    f"TARGET-ONLY  {repo}: required check '{context}' is produced only on "
+                    "pull_request_target, which runs the default branch's workflow on the "
+                    "default branch's code unless the job checks out the pull request, so "
+                    "it may be unable to fail because of the pull request"
+                )
+            # every pair of workflows producing it on a pull request, ALLOW or not
+            by_path = {}
+            for path, job, why in on_pr.get(context, []):
+                by_path.setdefault(path, (job, why))
+            for a, b in itertools.combinations(sorted(by_path), 2):
+                findings.append(
+                    f"DUPLICATE    {repo}: required check '{context}' is produced on a pull "
+                    f"request into '{branch}' by {a}: {by_path[a][0]} ({by_path[a][1]}) and by "
+                    f"{b}: {by_path[b][0]} ({by_path[b][1]}), so a pull request head can carry "
+                    "it from two suites and the merge takes either"
                 )
     for key in sorted(set(allow) - used):
         findings.append(f"STALE-ALLOW  {key} matches no pull_request job")
@@ -1525,19 +1561,20 @@ def selftest():
         (
             "pull_request_target with an if:",
             repo(pr_target + "    if: false\n"),
-            ["CONDITIONAL"],
+            ["CONDITIONAL", "TARGET-ONLY"],
         ),
         (
             "pull_request_target types: [labeled]",
             repo(target("  pull_request_target:\n    types: [labeled]\n")),
-            ["TRIGGER"],
+            ["TRIGGER", "TARGET-ONLY"],
         ),
         (
             "pull_request_target path-filtered",
             repo(target("  pull_request_target:\n    paths: [a]\n")),
-            ["PATH-FILTER"],
+            ["PATH-FILTER", "TARGET-ONLY"],
         ),
-        # with both events, a filter or types: matter only when both have one
+        # with both events, a filter or types: matter only when the unfiltered events
+        # together miss opened or synchronize; each blocked event is then named
         (
             "pull_request path-filtered, pull_request_target not",
             repo(target("  pull_request:\n    paths: [a]\n  pull_request_target:\n")),
@@ -1548,7 +1585,7 @@ def selftest():
             repo(
                 target("  pull_request:\n    paths: [a]\n  pull_request_target:\n    paths: [a]\n")
             ),
-            ["DUPLICATE", "PATH-FILTER"],
+            ["DUPLICATE", "PATH-FILTER", "PATH-FILTER"],
         ),
         (
             "pull_request types: [labeled], pull_request_target default",
@@ -1563,7 +1600,55 @@ def selftest():
                     "  pull_request_target:\n    types: [labeled]\n"
                 )
             ),
-            ["DUPLICATE", "TRIGGER"],
+            ["DUPLICATE", "TRIGGER", "TRIGGER"],
+        ),
+        (
+            "pull_request path-filtered, pull_request_target types: [labeled]",
+            repo(
+                target(
+                    "  pull_request:\n    paths: [a]\n  pull_request_target:\n    types: [labeled]\n"
+                )
+            ),
+            ["DUPLICATE", "PATH-FILTER", "TRIGGER"],
+        ),
+        (
+            "pull_request types: [labeled], pull_request_target path-filtered",
+            repo(
+                target(
+                    "  pull_request:\n    types: [labeled]\n  pull_request_target:\n    paths: [a]\n"
+                )
+            ),
+            ["DUPLICATE", "TRIGGER", "PATH-FILTER"],
+        ),
+        (
+            "types: [opened] and types: [synchronize] together cover every head",
+            repo(
+                target(
+                    "  pull_request:\n    types: [opened]\n"
+                    "  pull_request_target:\n    types: [synchronize]\n"
+                )
+            ),
+            dup,
+        ),
+        (
+            "path-filtered, with types that include opened and synchronize",
+            repo(target("  pull_request:\n    paths: [a]\n    types: [opened, synchronize]\n")),
+            ["PATH-FILTER"],
+        ),
+        (
+            "scalar types: opened and synchronize cover every head",
+            repo(
+                target(
+                    "  pull_request:\n    types: opened\n"
+                    "  pull_request_target:\n    types: synchronize\n"
+                )
+            ),
+            dup,
+        ),
+        (
+            "two pull_request_target workflows",
+            beside(pr_target, pr_target),
+            ["DUPLICATE", "TARGET-ONLY"],
         ),
         # negative controls
         (
@@ -1589,7 +1674,7 @@ def selftest():
         (
             "other pull_request_target job with a different name",
             beside(target(job="lint"), None, lint),
-            [],
+            ["TARGET-ONLY"],
         ),
         ("other merge_group job of the same name", beside(target("  merge_group:\n")), []),
         (
@@ -1618,6 +1703,34 @@ def selftest():
             "other pull_request filter it cannot read, different name",
             beside(target("  pull_request:\n    branches: ['ma?n']\n", job="lint")),
             inc1,
+        ),
+    ]
+    # ALLOW neither hides a pull request pair nor counts as a producer's absence
+    first = {("r", "a.yml", "check"): "test"}
+    pr_allow = [
+        (
+            "allowlisted first producer still pairs",
+            repo(pr_plain, more={"a.yml": pr_plain}),
+            dup,
+            first,
+        ),
+        (
+            "allowlisted first pull_request_target producer still pairs",
+            repo(pr_plain, more={"a.yml": pr_target}),
+            dup,
+            first,
+        ),
+        (
+            "three producers, first allowlisted",
+            repo(pr_plain, more={"a.yml": pr_plain, "m.yml": pr_plain}),
+            ["DUPLICATE", "DUPLICATE", "DUPLICATE"],
+            first,
+        ),
+        (
+            "allowlisted pull_request_target-only producer is accepted",
+            repo(pr_target),
+            [],
+            {("r", "w.yml", "check"): "test"},
         ),
     ]
     cases = [
@@ -1662,9 +1775,9 @@ def selftest():
             None,
         ),
         (
-            "pull_request_target reports on the PR head",
+            "pull_request_target reports on the PR head, but only base code",
             repo("on: pull_request_target\njobs:\n  check:\n    runs-on: x\n"),
-            [],
+            ["TARGET-ONLY"],
             None,
         ),
         (
@@ -1875,6 +1988,7 @@ def selftest():
         *((label, snap, want, None) for label, snap, want in duplicate),
         *((label, snap, want, None) for label, snap, want in cross),
         *((label, snap, want, None) for label, snap, want in pr_pair),
+        *pr_allow,
     ]
     bad = 0
 
@@ -1898,7 +2012,7 @@ def selftest():
     )
     f, inc, stats = evaluate(snap, {})
     got = [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc) + ["?"] * (stats["pr_jobs"] != 3)
-    report(f"3 pull_request jobs counted ({stats['pr_jobs']})", got, exit_code(f, inc), [], 0)
+    report(f"3 pull request jobs counted ({stats['pr_jobs']})", got, exit_code(f, inc), [], 0)
 
     # collection: failures exit 2, never 1 and never a crash
     pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
@@ -2076,7 +2190,7 @@ def main():
         print(f"{count} private repositories skipped (--public-only)")
     print(
         f"{stats['repos']} repositories, {stats['workflows']} workflows, "
-        f"{stats['pr_jobs']} pull_request jobs, {stats['required']} required checks: "
+        f"{stats['pr_jobs']} pull request jobs, {stats['required']} required checks: "
         f"{len(findings)} finding(s), {len(incomplete)} not evaluated"
     )
     return exit_code(findings, incomplete)

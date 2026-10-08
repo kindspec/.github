@@ -245,7 +245,7 @@ DUPLICATE rule of .github#16, .github#18 and .github#20:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
-    6 repositories, 7 workflows, 7 pull_request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+    6 repositories, 7 workflows, 7 pull request jobs, 7 required checks: 0 finding(s), 0 not evaluated
 
 .github#15 taught the script to expand a job that calls a reusable workflow
 into one `<caller> / <called job>` context per called job. A call into another
@@ -286,7 +286,8 @@ DUPLICATE for `check`.
 **And a second producer on the pull request itself** (.github#20). Two active
 workflows that run a job of the same context on a pull request into the default
 branch, on `pull_request` or `pull_request_target`, are a DUPLICATE, reported
-once per pair; so is one workflow on both events. A job there whose context it
+once per pair whether or not `ALLOW` names either job; so is one workflow on
+both events. A job there whose context it
 cannot resolve is refused, exit 2. The issue's reproduction, a `second.yml` with
 a job `check` added to kindkit in a `--save` snapshot, gives one DUPLICATE for
 `check` on `pull_request` and one on `pull_request_target`; main gives 0
@@ -294,24 +295,35 @@ findings for both.
 
 **`pull_request_target` reports on the pull request's head**, so the audit now
 counts it as a pull request event: a required check it alone produces is no
-longer ORPHANED, and one it produces unrequired is UNGATED. Its check runs carry
-the pull request's head sha:
+longer ORPHANED, and one it produces unrequired is UNGATED. A required check
+whose only producers are `pull_request_target` jobs is TARGET-ONLY instead,
+exit 1: such a job runs on the default branch's code unless it checks out the
+pull request, so it may be unable to fail because of the pull request, and the
+audit cannot tell which. `ALLOW` on the job, with the reason, accepts one. The
+`--public-only` run above has none; switching kindkit's `check.yml` from
+`pull_request` to `pull_request_target` in a `--save` snapshot gives TARGET-ONLY
+for `check` and `kind / conformance`, where main gave ORPHANED.
+
+`pull_request_target` check runs carry the pull request's head sha:
 python/cpython run 25066296099 (fork PR 149109, the issue's case),
 electron/electron run 37748122900 on PR 54550's head `a965781` (a same-repo
 branch), and react/react run 37730121633 on fork PR 37788's head `7af445b`.
 For the last two, `gh api repos/<o>/<r>/commits/<sha>/check-runs` lists the job,
 and the GraphQL `statusCheckRollup` of the PR's last commit lists it with
 `event: pull_request_target`. GitHub's
-"Troubleshooting required status checks" says: "For checks created by workflow
+"Troubleshooting required status checks" (github/docs
+`content/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks.md`,
+lines 55–64 at `60f9f34`) says: "For checks created by workflow
 jobs to be evaluated for a pull request, the workflow run must be triggered by
 one of these events", and lists `push`, `pull_request`, `pull_request_review`,
 `pull_request_target`, `deployment` and `deployment_status`. It names
 `workflow_dispatch` on the head branch as one whose checks "do not satisfy a
 required status check in a branch ruleset". That a ruleset accepts a
 `pull_request_target` check is the documentation's word; no kindspec ruleset
-has been watched doing it. A `pull_request_target` job runs the base branch's
-workflow file with `GITHUB_SHA` the base's last commit, so a pull request cannot
-change it, and it tests the pull request's code only if it checks that out.
+has been watched doing it. A `pull_request_target` job runs the workflow file
+from the default branch of the base repository, with `GITHUB_SHA` that branch's
+last commit, so a pull request cannot change it, and it tests the pull request's
+code only if it checks that out.
 
 **What it still does not see.** The same page also lists `pull_request_review`,
 `deployment` and `deployment_status` as events whose checks count; the audit

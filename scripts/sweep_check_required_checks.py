@@ -32,10 +32,7 @@ MUTANTS = [
         "            elif context not in produced:\n",
         "            elif False:\n",
     ),
-    ("path filter ignored", "                if filtered:\n", "                if False:\n"),
     ("paths-ignore ignored", '{"paths", "paths-ignore"}', '{"paths"}'),
-    ("restrictive types ignored", "                if types:\n", "                if False:\n"),
-    ("types check inverted", "DEFAULT_TYPES <= t for t", "not DEFAULT_TYPES <= t for t"),
     (
         "conditional never reported",
         "                    if skip:\n",
@@ -110,16 +107,6 @@ MUTANTS = [
             '        text = next((v for k, v in (data.get("called") or {}).items()'
             ' if k.split("@")[0] == uses.split("@")[0]), None)\n'
         ),
-    ),
-    (
-        "path filter ignored for called jobs",
-        "                    if filtered:\n",
-        "                    if filtered and not cid:\n",
-    ),
-    (
-        "types ignored for called jobs",
-        "                    if types:\n",
-        "                    if types and not cid:\n",
     ),
     (
         "called jobs not counted",
@@ -401,37 +388,11 @@ MUTANTS = [
         "on_pr, pr_unknown = producers(data, branch, pr_admits)",
         "on_pr, pr_unknown = {}, []",
     ),
-    (
-        "cross-workflow pr duplicate never reported",
-        "for other, job, why in on_pr.get(context, []):",
-        "for other, job, why in []:",
-    ),
-    (
-        "pr pair reported from both sides",
-        "                        if other > path:\n",
-        ("                        if other != path:\n"),
-    ),
-    ("own job counted as its own pr producer", "if other > path:", "if other >= path:"),
     ("two-event workflow not flagged", "if len(events) > 1:", "if False:"),
     (
         "pr branch filter ignored elsewhere",
         '    events = pr_events(on, branch)\n    return "on "',
         '    events = [e for e in PR_EVENTS if e in on]\n    return "on "',
-    ),
-    (
-        "path filter on one event of two counted",
-        'filtered = all({"paths", "paths-ignore"}',
-        'filtered = any({"paths", "paths-ignore"}',
-    ),
-    (
-        "path filter read from the first event only",
-        "set(c) for c in configs)",
-        "set(c) for c in configs[:1])",
-    ),
-    (
-        "types on one event of two counted",
-        "if not any(t is None or DEFAULT_TYPES <= t for t in types):",
-        "if not all(t is None or DEFAULT_TYPES <= t for t in types):",
     ),
     (
         "own undecided pr refused again",
@@ -469,6 +430,81 @@ MUTANTS = [
         "only disabled_manually excluded from producers",
         'if data["workflow_state"].get(path) != "active":',
         'if data["workflow_state"].get(path) == "disabled_manually":',
+    ),
+    # PATH-FILTER and TRIGGER, per event; a covered head clears them (#21 review)
+    ("path filter ignored", 'blocked.append(("PATH-FILTER", event, None))', "pass"),
+    ("restrictive types ignored", 'blocked.append(("TRIGGER", event, sorted(types)))', "pass"),
+    (
+        "types check inverted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types is not None and DEFAULT_TYPES <= types:",
+    ),
+    (
+        "filtered event counts as covering",
+        "        else:\n            covered |=",
+        "        if True:\n            covered |=",
+    ),
+    ("covering ignored", "[] if DEFAULT_TYPES <= covered else blocked", "blocked"),
+    (
+        "default types do not cover",
+        "covered |= DEFAULT_TYPES if types is None else types",
+        "covered |= set() if types is None else types",
+    ),
+    (
+        "blocks ignored for called jobs",
+        "                    for kind, event, types in blocked:\n",
+        "                    for kind, event, types in [] if cid else blocked:\n",
+    ),
+    ("every block named a path filter", 'if kind == "PATH-FILTER":', "if True:"),
+    (
+        "types with opened and synchronize counted as restricted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types is not None:",
+    ),
+    (
+        "scalar types not wrapped",
+        "set(map(str, types if isinstance(types, list) else [types]))",
+        "set(map(str, types))",
+    ),
+    # pull request pairs, independent of ALLOW (#21 review)
+    (
+        "pr pairs never reported",
+        "for a, b in itertools.combinations(sorted(by_path), 2):",
+        "for a, b in []:",
+    ),
+    (
+        "pr pairs only between the first two",
+        "itertools.combinations(sorted(by_path), 2)",
+        "itertools.combinations(sorted(by_path)[:2], 2)",
+    ),
+    (
+        "allowlisted workflow dropped from pr pairs",
+        "            for path, job, why in on_pr.get(context, []):\n",
+        (
+            "            for path, job, why in [e for e in on_pr.get(context, [])"
+            " if not any(k[:2] == (repo, e[0]) for k in allow)]:\n"
+        ),
+    ),
+    # TARGET-ONLY (#21 review)
+    (
+        "target-only never reported",
+        'elif pr_events_of.get(context) == {"pull_request_target"}:',
+        "elif False:",
+    ),
+    (
+        "target-only with another event too",
+        'elif pr_events_of.get(context) == {"pull_request_target"}:',
+        'elif "pull_request_target" in pr_events_of.get(context, ()):',
+    ),
+    ("pr events not recorded", "pr_events_of.setdefault(context, set()).update(events)", "pass"),
+    ("allowlisted job not a producer", "                    produced.update(contexts)\n", ""),
+    (
+        "allowlisted job counted for target-only",
+        "                    produced.update(contexts)\n",
+        (
+            "                    produced.update(contexts)\n"
+            '                    pr_events_of.setdefault(context, set()).add("pull_request_target")\n'
+        ),
     ),
 ]
 
