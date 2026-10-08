@@ -240,12 +240,12 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 0 on the org.** On 2026-10-08, at `main`
-after .github#15:
+**The required-checks audit exits 0 on the org.** On 2026-10-08, with the
+DUPLICATE rule of .github#16:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
-    6 repositories, 6 workflows, 7 pull_request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+    6 repositories, 7 workflows, 7 pull_request jobs, 7 required checks: 0 finding(s), 0 not evaluated
 
 .github#15 taught the script to expand a job that calls a reusable workflow
 into one `<caller> / <called job>` context per called job. A call into another
@@ -262,10 +262,20 @@ gets a push run. On kindkit#26's merge commit `6ebd80d`, `gh api
 repos/kindspec/kindkit/commits/<sha>/check-runs` lists `check` and
 `kind / conformance` from one `push` suite, both `success`.
 
-**What the audit does not see: a second producer.** It reads only a
-workflow's `pull_request` trigger, so a required context that a bare `push`
-also produces on a pull request branch — the defect kindkit#26 and rowspec#67
-fixed by hand — passes it. That is .github#16, open.
+**The audit now sees a second producer.** A required context whose workflow
+also runs on `push` to some branch other than the default — the defect
+kindkit#26 and rowspec#67 removed by hand — is a DUPLICATE finding, exit 1
+(.github#16). It reads `push` with no branch filter, `branches-ignore`, and
+`branches` with GitHub's `*`, `**`, `?`, `+`, `[]` and `!`, and the caller's
+`push` decides for a called workflow's contexts. A tags-only `push` does not
+count. A filter it cannot settle, it refuses with exit 2. Restoring kindkit's
+old `on: [push, pull_request]` in a `--save` snapshot of the org gives two
+DUPLICATE findings, `check` and `kind / conformance`.
+
+**What it still does not see: a producer in another workflow.** The rule reads
+one workflow's own `push` trigger. A required context produced on
+`pull_request` by one workflow and on `push` by a different workflow with a
+job of the same name is not flagged. That is .github#18, open.
 
 #### Security settings, org-wide
 
@@ -650,6 +660,10 @@ and these two had, at ten against twelve:
   another branch, none of which ever reports on the pull request it gates
   (.github#10 review; reproduced with `--load` against that pull request's
   first commit, `0970870`)
+- the same audit reporting 0 findings while kindkit's required `check` and
+  `kind / conformance` ran twice on a pull request head, once from a bare
+  `push` and once from `pull_request`, because it read only the
+  `pull_request` trigger (.github#16; on kindkit#25's head `79d194a`)
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)

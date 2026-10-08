@@ -3,7 +3,9 @@
 Org-level defaults for [kindspec](https://github.com/kindspec).
 
 - `scripts/check_required_checks.py` — fails when a job that runs on pull
-  requests gates no merge, or a required check never reports; its mutation
+  requests gates no merge, a required check never reports or can be skipped,
+  or a required check also comes from a `push` run on the pull request's
+  branch; its mutation
   sweep is `scripts/sweep_check_required_checks.py`.
   `.github/workflows/required-checks-audit.yml` runs it daily, and on demand.
 - `profile/README.md` — the org landing page.
