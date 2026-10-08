@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Mutation sweep for check_required_checks.py: its --selftest must catch each mutant.
 
-A mutant is caught when a self-test case reports FAIL, and crashed when the
-self-test dies instead; both are red, and they are counted apart.
+A mutant is caught when a self-test case reports FAIL, crashed when the
+self-test dies instead, and hung when it runs past TIMEOUT seconds; all three
+are red, and they are counted apart.
 
 Each mutant is applied to a copy in a temporary directory; the source is never
 edited in place. A pattern that does not match exactly once, or a mutation that
@@ -319,13 +320,80 @@ MUTANTS = [
     ),
     ("negated branches-ignore accepted", 'if any(p.startswith("!") for p in ignore):', "if False:"),
     ("empty branches accepted", "    if not patterns:\n", "    if False:\n"),
+    # #17 could not run this one: it loops forever, and the sweep had no timeout
+    ("unclosed [ accepted", "if end < 0 or not re.fullmatch(", "if not re.fullmatch("),
+    # DUPLICATE: a push producer in another workflow (#18)
+    (
+        "cross-workflow duplicate never reported",
+        "                    for other, job, why in on_push.get(context, []):\n",
+        "                    for other, job, why in []:\n",
+    ),
+    (
+        "own push counted again as another workflow",
+        "                        if other != path:\n                            findings",
+        "                        if True:\n                            findings",
+    ),
+    (
+        "own undecided push refused again",
+        "if other != path and c in (None, context)",
+        "if c in (None, context)",
+    ),
+    (
+        "undecided push refused for any context",
+        "if other != path and c in (None, context)",
+        "if other != path",
+    ),
+    (
+        "unknown-name push job refused only by name",
+        "if other != path and c in (None, context)",
+        "if other != path and c == context",
+    ),
+    (
+        "push doubts never refused",
+        "                    if doubts:\n",
+        "                    if False:\n",
+    ),
+    (
+        "inactive workflow pushes",
+        '        if data["workflow_state"].get(path) != "active":\n            continue\n',
+        "",
+    ),
+    ("push filter ignored elsewhere", "        if not why and not doubt:\n", "        if False:\n"),
+    (
+        "undecided push elsewhere passed",
+        "            why, doubt = None, str(e)\n",
+        "            why, doubt = None, None\n",
+    ),
+    (
+        "undecided push elsewhere is a finding",
+        "                if doubt:\n                    unknown.append",
+        "                if False:\n                    unknown.append",
+    ),
+    (
+        "push calls not expanded",
+        "            if uses and not unresolved:\n",
+        "            if False:\n",
+    ),
+    (
+        "unknown push job accepted",
+        "            if unresolved:\n                unknown.append",
+        "            if False:\n                unknown.append",
+    ),
+    (
+        "push producers not collected",
+        "on_push, push_unknown = push_producers(data, branch)",
+        "on_push, push_unknown = {}, []",
+    ),
 ]
+
+TIMEOUT = 30  # seconds per mutant; the self-test itself takes well under one
 
 
 def main():
     src = TARGET.read_text()
     digest = hashlib.sha256(src.encode()).hexdigest()
-    counts = {"caught": 0, "crashed": 0, "SURVIVED": 0, "BROKEN": 0}
+    counts = {"caught": 0, "crashed": 0, "hung": 0, "SURVIVED": 0, "BROKEN": 0}
+    print(f"target sha256 before: {digest}")
     with tempfile.TemporaryDirectory() as tmp:
         copy = pathlib.Path(tmp) / TARGET.name
         for label, old, new in MUTANTS:
@@ -337,14 +405,20 @@ def main():
                 if hashlib.sha256(copy.read_bytes()).hexdigest() == digest:
                     verdict = "BROKEN"
                 else:
-                    r = subprocess.run(
-                        [sys.executable, "-I", str(copy), "--selftest"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
+                    try:
+                        r = subprocess.run(
+                            [sys.executable, "-I", str(copy), "--selftest"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=TIMEOUT,
+                        )
+                    except subprocess.TimeoutExpired:
+                        r = None
                     verdict = (
-                        "SURVIVED"
+                        "hung"
+                        if r is None
+                        else "SURVIVED"
                         if r.returncode == 0
                         else "caught"
                         if "\nFAIL " in "\n" + r.stdout
@@ -352,12 +426,16 @@ def main():
                     )
             counts[verdict] += 1
             print(f"{verdict:8} {label}")
-    assert hashlib.sha256(TARGET.read_bytes()).hexdigest() == digest, "target changed"
+    after = hashlib.sha256(TARGET.read_bytes()).hexdigest()
+    print(f"target sha256 after:  {after}")
+    assert after == digest, "target changed"
     print(
         f"{len(MUTANTS)} mutants: {counts['caught']} caught, {counts['crashed']} crashed "
-        f"the self-test, {counts['SURVIVED']} survived, {counts['BROKEN']} broken"
+        f"the self-test, {counts['hung']} hung past {TIMEOUT}s, {counts['SURVIVED']} survived, "
+        f"{counts['BROKEN']} broken"
     )
-    return 0 if counts["caught"] + counts["crashed"] == len(MUTANTS) else 1
+    red = counts["caught"] + counts["crashed"] + counts["hung"]
+    return 0 if red == len(MUTANTS) else 1
 
 
 if __name__ == "__main__":
