@@ -10,6 +10,8 @@ Org-level defaults for [kindspec](https://github.com/kindspec).
 - `scripts/generate_logo.py` — regenerates that mark.
 - `LICENSE` — per directory: `scripts/` MIT, everything else CC-BY-4.0.
 
-Issue templates are in `.github/ISSUE_TEMPLATE/`. GitHub uses them in every
-kindspec repository that has no `.github/ISSUE_TEMPLATE/` of its own. Shared
-workflows and the other org-wide defaults will land here as they are written.
+Issue templates are in `.github/ISSUE_TEMPLATE/`, and the pull request template
+is `.github/PULL_REQUEST_TEMPLATE.md`. GitHub uses each in every kindspec
+repository that has none of its own. The shared CI workflow is not here: it is
+kindkit's reusable
+[`kind.yml`](https://github.com/kindspec/kindkit/blob/main/.github/workflows/kind.yml).
