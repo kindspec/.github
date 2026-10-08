@@ -179,10 +179,16 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   the gate resolves each required name to whichever run it finds
   (kindspec/rowspec#43). The second producer can also be a `push` job in a
   different workflow with the same name. Restrict `push` to the default branch,
-  or to tags. The audit reports either as DUPLICATE: `push` with no branch
-  filter, a `branches-ignore` that leaves some other branch, or `branches` that
-  match one. It refuses, exit 2, a filter it cannot settle either way, and a
-  `push` job elsewhere whose name it cannot resolve.
+  or to tags. It can also run on the pull request itself: a job of the same
+  name in another workflow on `pull_request` or `pull_request_target`, or one
+  workflow on both. `pull_request_target` reports on the pull request's head
+  like `pull_request` does, and satisfies a required check, but it runs the
+  workflow file from the base branch, so the pull request cannot change it. The
+  audit reports each of these as DUPLICATE: `push` with no branch filter, a
+  `branches-ignore` that leaves some other branch, or `branches` that match
+  one; or a second pull request producer into the default branch. It refuses,
+  exit 2, a filter it cannot settle either way, and a job elsewhere whose name
+  it cannot resolve.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success

@@ -35,7 +35,7 @@ MUTANTS = [
     ("path filter ignored", "                if filtered:\n", "                if False:\n"),
     ("paths-ignore ignored", '{"paths", "paths-ignore"}', '{"paths"}'),
     ("restrictive types ignored", "                if types:\n", "                if False:\n"),
-    ("types check inverted", "not DEFAULT_TYPES <= types", "DEFAULT_TYPES <= types"),
+    ("types check inverted", "DEFAULT_TYPES <= t for t", "not DEFAULT_TYPES <= t for t"),
     (
         "conditional never reported",
         "                    if skip:\n",
@@ -44,9 +44,9 @@ MUTANTS = [
     ("job-level if ignored", "    if jobs[job_id][2]:\n", "    if False:\n"),
     ("unrequired need ignored", "if any(c not in required for c in contexts):", "if False:"),
     (
-        "any pr-ish event counts",
-        'if "pull_request" in on:',
-        'if {"pull_request", "pull_request_target", "merge_group"} & set(on):',
+        "merge_group counted as a pr event",
+        'PR_EVENTS = ("pull_request", "pull_request_target")',
+        'PR_EVENTS = ("pull_request", "pull_request_target", "merge_group")',
     ),
     (
         "branches-ignore ignored",
@@ -335,23 +335,29 @@ MUTANTS = [
     ),
     (
         "own undecided push refused again",
-        "if other != path and c in (None, context)",
-        "if c in (None, context)",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if c in (None, context)",
     ),
     (
         "undecided push refused for any context",
-        "if other != path and c in (None, context)",
-        "if other != path",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path",
     ),
     (
         "unknown-name push job refused only by name",
-        "if other != path and c in (None, context)",
-        "if other != path and c == context",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path and c == context",
     ),
     (
         "push doubts never refused",
-        "                    if doubts:\n",
-        "                    if False:\n",
+        (
+            "                    if doubts:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a push producer'
+        ),
+        (
+            "                    if False:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a push producer'
+        ),
     ),
     (
         "inactive workflow pushes",
@@ -381,8 +387,88 @@ MUTANTS = [
     ),
     (
         "push producers not collected",
-        "on_push, push_unknown = push_producers(data, branch)",
+        "on_push, push_unknown = producers(data, branch, push_duplicates)",
         "on_push, push_unknown = {}, []",
+    ),
+    # DUPLICATE: a second producer on the pull request itself (#20)
+    (
+        "pull_request_target not a pr event",
+        'PR_EVENTS = ("pull_request", "pull_request_target")',
+        'PR_EVENTS = ("pull_request",)',
+    ),
+    (
+        "pr producers not collected",
+        "on_pr, pr_unknown = producers(data, branch, pr_admits)",
+        "on_pr, pr_unknown = {}, []",
+    ),
+    (
+        "cross-workflow pr duplicate never reported",
+        "for other, job, why in on_pr.get(context, []):",
+        "for other, job, why in []:",
+    ),
+    (
+        "pr pair reported from both sides",
+        "                        if other > path:\n",
+        ("                        if other != path:\n"),
+    ),
+    ("own job counted as its own pr producer", "if other > path:", "if other >= path:"),
+    ("two-event workflow not flagged", "if len(events) > 1:", "if False:"),
+    (
+        "pr branch filter ignored elsewhere",
+        '    events = pr_events(on, branch)\n    return "on "',
+        '    events = [e for e in PR_EVENTS if e in on]\n    return "on "',
+    ),
+    (
+        "path filter on one event of two counted",
+        'filtered = all({"paths", "paths-ignore"}',
+        'filtered = any({"paths", "paths-ignore"}',
+    ),
+    (
+        "path filter read from the first event only",
+        "set(c) for c in configs)",
+        "set(c) for c in configs[:1])",
+    ),
+    (
+        "types on one event of two counted",
+        "if not any(t is None or DEFAULT_TYPES <= t for t in types):",
+        "if not all(t is None or DEFAULT_TYPES <= t for t in types):",
+    ),
+    (
+        "own undecided pr refused again",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if c in (None, context)",
+    ),
+    (
+        "undecided pr refused for any context",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path",
+    ),
+    (
+        "unknown-name pr job refused only by name",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path and c == context",
+    ),
+    (
+        "pr doubts never refused",
+        (
+            "                    if doubts:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a pull request producer'
+        ),
+        (
+            "                    if False:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a pull request producer'
+        ),
+    ),
+    # a mutant that excluded only disabled_manually survived before (#20)
+    (
+        "only disabled_manually excluded",
+        '            if state != "active":\n',
+        '            if state == "disabled_manually":\n',
+    ),
+    (
+        "only disabled_manually excluded from producers",
+        'if data["workflow_state"].get(path) != "active":',
+        'if data["workflow_state"].get(path) == "disabled_manually":',
     ),
 ]
 
