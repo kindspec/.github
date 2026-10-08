@@ -240,15 +240,32 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 2 today.** It ran on 2026-10-08 with
-`python3 -I scripts/check_required_checks.py --public-only`. Of 6 repositories,
-7 pull_request jobs and 7 required checks, it reported 0 findings and 4 not
-evaluated. kindkit's and rowspec's `kind` jobs call a reusable workflow. The
-script refuses to guess a called workflow's context names, so it cannot match
-`kind / conformance` to them. That refusal is correct, and the audit cannot
-pass until the script expands a called workflow's jobs. .github#12 adds a
-daily workflow that runs the audit; until that expansion lands, it is red on
-every run.
+**The required-checks audit exits 0 on the org.** On 2026-10-08, at `main`
+after .github#15:
+
+    $ python3 -I scripts/check_required_checks.py --public-only
+    1 private repositories skipped (--public-only)
+    6 repositories, 6 workflows, 7 pull_request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+
+.github#15 taught the script to expand a job that calls a reusable workflow
+into one `<caller> / <called job>` context per called job. A call into another
+repository is read at exactly its pinned ref and kept in the `--save`
+snapshot, so kindkit's and rowspec's `kind` jobs now match their required
+`kind / conformance`. It still refuses, exit 2, a call it cannot fetch and a
+called workflow that itself calls one. .github#12 runs the audit daily.
+
+**One producer per required check, in kindkit too.** kindkit#26 moved
+kindkit's `check.yml` to `push` on `main` only, plus `pull_request`, as
+rowspec#67 did for rowspec: a pull request head carries `check` and
+`kind / conformance` once each, from the `pull_request` suite. `main` still
+gets a push run. On kindkit#26's merge commit `6ebd80d`, `gh api
+repos/kindspec/kindkit/commits/<sha>/check-runs` lists `check` and
+`kind / conformance` from one `push` suite, both `success`.
+
+**What the audit does not see: a second producer.** It reads only a
+workflow's `pull_request` trigger, so a required context that a bare `push`
+also produces on a pull request branch — the defect kindkit#26 and rowspec#67
+fixed by hand — passes it. That is .github#16, open.
 
 #### Security settings, org-wide
 
@@ -327,16 +344,12 @@ In order:
    commit. Its brief argues the rowspec thesis does not transfer to canvases at
    all, and that a finding of "do not build this" is a legitimate outcome there
    too.
-3. **The required-checks audit — teach it reusable workflows.** The daily run
-   (.github#12) cannot go green until `check_required_checks.py` expands a
-   called workflow's jobs into `<caller> / <called job>` contexts (§1,
-   `.github`). .github#3 stays open for it.
-4. **rowspec 0.3.0** (rowspec#80), once the owner approves tagging (§1).
-5. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
+3. **rowspec 0.3.0** (rowspec#80), once the owner approves tagging (§1).
+4. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
    into the repository with its reversal cost.
-6. **blockspec#5 — author the case tree before any implementation exists.** The
+5. **blockspec#5 — author the case tree before any implementation exists.** The
    §0 decision, and the one discipline rowspec had to retrofit.
 
 Open issues carry acceptance criteria and a red-before-green requirement. List

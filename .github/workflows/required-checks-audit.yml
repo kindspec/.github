@@ -1,0 +1,30 @@
+name: required-checks-audit
+# Compares every public kindspec repository's pull_request jobs against the
+# checks its ruleset requires, once a day, so a repository that gains CI is
+# picked up without anyone remembering to look (kindspec/.github#3).
+#
+# Deliberately no pull_request trigger: this job would then run on pull
+# requests here and gate nothing, which is the UNGATED finding it exists to
+# report. It reads each repository's default branch, never a pull request.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The script calls `gh api`, which needs a token in the environment even
+      # for endpoints that answer unauthenticated. The job's own token cannot
+      # see private repositories, so the run is --public-only and says how many
+      # it skipped. Exit 1 is a finding, 2 is "could not evaluate"; both fail.
+      - name: every pull_request job is a required check, and the reverse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/check_required_checks.py --public-only
