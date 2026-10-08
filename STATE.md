@@ -225,7 +225,7 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 ### .github — the org contract, this file, the org page, the audit
 
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
-`scripts/check_required_checks.py`. It has no workflow of its own on `main`.
+`scripts/check_required_checks.py`.
 
 **The required-checks audit exits 2 today.** It ran on 2026-10-08 with
 `python3 -I scripts/check_required_checks.py --public-only`. Of 6 repositories,
@@ -233,9 +233,9 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 evaluated. kindkit's and rowspec's `kind` jobs call a reusable workflow. The
 script refuses to guess a called workflow's context names, so it cannot match
 `kind / conformance` to them. That refusal is correct, and the audit cannot
-pass until the script expands a called workflow's jobs. A daily workflow that
-runs the audit is in review (.github#12). Until that expansion lands, the
-workflow will be red on every run.
+pass until the script expands a called workflow's jobs. .github#12 adds a
+daily workflow that runs the audit; until that expansion lands, it is red on
+every run.
 
 #### Security settings, org-wide
 
