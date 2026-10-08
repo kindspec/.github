@@ -104,7 +104,7 @@ rewritten or the branch deleted, and only squash merges are allowed.
     blockspec   none — no workflows of its own yet                         n/a
     nodespec    none — no workflows of its own yet                         n/a
     research    none — no workflows of its own yet                         n/a
-    .github     none — no workflows of its own yet                         n/a
+    .github     none — its one workflow never runs on a pull request       n/a
 
 **"Strict" — branch must be up to date with `main` before merging — applies only
 to `rowspec` and `kindkit`.** It is a parameter *of* the required-checks rule, so
@@ -165,7 +165,9 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   merge, which is exactly the shape of a check nobody is running.
   `python3 scripts/check_required_checks.py` (in this repository) compares every
   pull_request job against the required checks, in both directions, and fails
-  on a gap; nothing runs it on a schedule yet (kindspec/.github#3).
+  on a gap. `.github/workflows/required-checks-audit.yml` runs it daily over
+  each public repository's default branch; a red run there is a gap, or
+  something the script could not evaluate, and both mean read the log.
 - **A path-filtered workflow never reports on an unrelated PR.** Requiring one
   blocks every merge that does not touch its paths, forever. No kindspec
   workflow is path-filtered today; keep it that way, or do not require it.
