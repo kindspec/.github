@@ -140,7 +140,7 @@ adversarial discipline, which is the more important of the two clauses, is
 honour-system and will stay that way until something can attest to it. Say so
 rather than implying the green tick covers it.
 
-### 3.2 Three ways this gate can quietly stop working
+### 3.2 Four ways this gate can quietly stop working
 
 Each is the pattern in §2.2, one layer up in the infrastructure.
 
@@ -166,12 +166,21 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   merge, which is exactly the shape of a check nobody is running.
   `python3 scripts/check_required_checks.py` (in this repository) compares every
   pull_request job against the required checks, in both directions, and fails
-  on a gap. `.github/workflows/required-checks-audit.yml` runs it daily over
+  on a gap, and on each of the hazards in this list it can read from a
+  workflow file. `.github/workflows/required-checks-audit.yml` runs it daily over
   each public repository's default branch; a red run there is a gap, or
   something the script could not evaluate, and both mean read the log.
 - **A path-filtered workflow never reports on an unrelated PR.** Requiring one
   blocks every merge that does not touch its paths, forever. No kindspec
   workflow is path-filtered today; keep it that way, or do not require it.
+- **A required check with two producers is satisfied by either.** A workflow
+  that runs on `pull_request` and also on `push` to the pull request's branch
+  reports every one of its contexts twice on that head, from two suites, and
+  the gate resolves each required name to whichever run it finds
+  (kindspec/rowspec#43). Restrict `push` to the default branch, or to tags. The
+  audit reports this as DUPLICATE: `push` with no branch filter, a
+  `branches-ignore` that leaves some other branch, or `branches` that match one.
+  A filter it cannot settle either way it refuses, exit 2.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success

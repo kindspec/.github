@@ -20,6 +20,12 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                report at all, and the merge waits on them instead
   PATH-FILTER  a required job is path-filtered, so it never reports on an
                unrelated pull request and blocks it forever (AGENTS.md 3.2)
+  DUPLICATE    a required job's workflow also runs on push to some branch other
+               than the default: no branch filter, a branches-ignore that leaves
+               one, or branches that match one. A pull request head then carries
+               the context from two suites, and the merge takes either
+               (kindspec/rowspec#43). A tags-only push does not count. For a
+               called workflow's contexts, the caller's push decides
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
@@ -28,8 +34,11 @@ than the org reports, or a private count this token cannot read; a repository
 whose rules or workflow states cannot be read (rulesets on a private repository
 need a paid plan); a workflow the parser cannot read or GitHub would reject
 (a job with neither runs-on nor uses, or uses with runs-on or steps, a
-non-mapping job); or a matrix,
-expression- or block-named job whose context names this script does not expand.
+non-mapping job); a matrix,
+expression- or block-named job whose context names this script does not expand;
+or, for a required job, a push branch filter this script cannot settle either
+way (it decides by finding a branch the filter admits, or by enumerating every
+branch it could).
 A run that could not look must not report a pass.
 
 A job that calls a reusable workflow (`uses: ./.github/workflows/F.yml`, or
@@ -58,6 +67,7 @@ it cannot tell when the token cannot see the org's private count.
 
 import argparse
 import base64
+import itertools
 import json
 import re
 import subprocess
@@ -72,6 +82,7 @@ ALLOW = {}
 
 ACTIONS_APP_ID = 15368  # GitHub Actions; a context from another app is not a workflow job
 DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unreported
+SAMPLES = 4096  # names tried per branch filter pattern; a pattern with more is not enumerated
 GH = ["gh"]
 
 
@@ -198,11 +209,126 @@ def parse_yaml(text):
 # --- evaluation ---
 
 
+def _pattern(pattern):
+    """A GitHub filter pattern as (regex, sample names, whether the samples are all it matches).
+
+    `*` is any run without '/', `**` any run, `?` zero or one and `+` one or more of
+    the preceding character, `[...]` one character from a set of letters, digits
+    and ranges among them, and backslash escapes. Anything else is refused.
+    """
+    atoms, i = [], 0  # (regex, samples, finite, a character ? or + may follow)
+    while i < len(pattern):
+        c = pattern[i]
+        if pattern.startswith("**", i):
+            atoms.append((".*", ["", "x", "x/x"], False, False))
+            i += 1
+        elif c == "*":
+            atoms.append(("[^/]*", ["", "x"], False, False))
+        elif c in "?+":
+            if not atoms or not atoms[-1][3]:
+                raise Unsupported(f"filter pattern {pattern!r}: '{c}' follows no character")
+            r, s, finite, _ = atoms.pop()
+            if c == "?":
+                atoms.append((f"(?:{r})?", ["", *s], finite, False))
+            else:
+                atoms.append((f"(?:{r})+", [*s, *(x + x for x in s)], False, False))
+        elif c == "[":
+            end = pattern.find("]", i)
+            body = pattern[i + 1 : end]
+            if end < 0 or not re.fullmatch(r"(?:[A-Za-z0-9](?:-[A-Za-z0-9])?)+", body):
+                raise Unsupported(f"filter pattern {pattern!r}: character set")
+            chars = set()
+            for lo, hi in re.findall(r"([A-Za-z0-9])(?:-([A-Za-z0-9]))?", body):
+                hi = hi or lo
+                if lo > hi or not any(
+                    f(lo) and f(hi) for f in (str.isdigit, str.islower, str.isupper)
+                ):
+                    raise Unsupported(f"filter pattern {pattern!r}: range {lo}-{hi}")
+                chars |= {chr(n) for n in range(ord(lo), ord(hi) + 1)}
+            atoms.append(("[" + "".join(sorted(chars)) + "]", sorted(chars), True, True))
+            i = end
+        elif c == "]":
+            raise Unsupported(f"filter pattern {pattern!r}: unmatched ']'")
+        else:
+            if c == "\\":
+                i += 1
+                if i == len(pattern):
+                    raise Unsupported(f"filter pattern {pattern!r}: trailing backslash")
+                c = pattern[i]
+            atoms.append((re.escape(c), [c], True, True))
+        i += 1
+    regex = re.compile("".join(a[0] for a in atoms) + r"\Z")
+    samples = itertools.islice(itertools.product(*(a[1] for a in atoms)), SAMPLES + 1)
+    samples = ["".join(t) for t in samples]
+    return regex, samples[:SAMPLES], all(a[2] for a in atoms) and len(samples) <= SAMPLES
+
+
 def _glob(pattern):
     if re.search(r"[?+\[\]]", pattern):
         raise Unsupported(f"branch filter pattern {pattern!r}")
-    parts = (re.escape(p).replace(r"\*", "[^/]*") for p in pattern.split("**"))
-    return re.compile(".*".join(parts) + r"\Z")
+    return _pattern(pattern)[0]
+
+
+def _patterns(config, key):
+    value = config[key]
+    if value is None or isinstance(value, dict):
+        raise Unsupported(f"push {key}: {value!r}")
+    return [str(p) for p in (value if isinstance(value, list) else [value])]
+
+
+def _branch_name(name):
+    return bool(name) and "//" not in f"/{name}/"
+
+
+def push_duplicates(on, branch):
+    """Why the push trigger also runs on a branch other than branch, or None.
+
+    A pull request head is such a branch, so its required contexts would then come
+    from two suites. Decided by finding a branch the trigger admits, or by showing
+    there is none; a filter this cannot settle either way is refused.
+    """
+    if "push" not in on:
+        return None
+    config = on["push"] if on["push"] is not None else {}
+    if not isinstance(config, dict):
+        raise Unsupported(f"unreadable push trigger: {config!r}")
+    refs = {"branches", "branches-ignore", "tags", "tags-ignore"} & set(config)
+    if not refs:
+        return "push has no branch filter"
+    if {"branches", "branches-ignore"} <= refs:
+        raise Unsupported("push has both branches and branches-ignore; GitHub rejects it")
+    others = ["x", "x/x", "X", "0", "x-x", "x.x", "x_x", f"{branch}x", f"x/{branch}"]
+    if "branches-ignore" in config:
+        ignore = _patterns(config, "branches-ignore")
+        if any(re.fullmatch(r"\**\*\*\**", p) for p in ignore):
+            return None  # a pattern of only stars, '**' among them, ignores every branch
+        regexes = [_pattern(p)[0] for p in ignore]
+        for name in others:
+            if not any(r.match(name) for r in regexes):
+                return f"push branches-ignore admits '{name}'"
+        raise Unsupported(f"push branches-ignore {ignore}: cannot tell what it admits")
+    if "branches" not in config:
+        return None  # tags only
+    filters, settled = [], True
+    patterns = _patterns(config, "branches")
+    for n, p in enumerate(patterns):
+        negated = p.startswith("!")
+        regex, samples, finite = _pattern(p[1:] if negated else p)
+        filters.append((negated, regex))
+        if not negated:
+            others += samples
+            # every name it matches is sampled, or a later '!**' drops them all
+            settled &= finite or any(re.fullmatch(r"!\**\*\*\**", q) for q in patterns[n:])
+    for name in others:
+        runs = False
+        for negated, regex in filters:
+            if regex.match(name):
+                runs = not negated
+        if runs and name != branch and _branch_name(name):
+            return f"push branches admit '{name}'"
+    if settled:
+        return None
+    raise Unsupported(f"push branches {patterns}: cannot tell what they admit")
 
 
 def _branch_runs(config, branch):
@@ -389,6 +515,10 @@ def evaluate(snapshot, allow):
                     if why:
                         elsewhere.setdefault(context, why)
                 continue
+            try:
+                pushed, unknown = push_duplicates(_events(workflow), branch), None
+            except Unsupported as e:
+                pushed, unknown = None, str(e)
             calls = {}
             for job_id, job in jobs.items():
                 if job[5] and not job[4]:
@@ -424,6 +554,14 @@ def evaluate(snapshot, allow):
                             f"'{context}' is not a required check"
                         )
                         continue
+                    if pushed:
+                        findings.append(
+                            f"DUPLICATE    {unit} is required and its workflow also runs on push "
+                            f"to other branches ({pushed}), so a pull request head can carry "
+                            f"'{context}' from two suites and the merge takes either"
+                        )
+                    elif unknown:
+                        incomplete.append(f"{unit}: not evaluated for a push producer: {unknown}")
                     if filtered:
                         findings.append(
                             f"PATH-FILTER  {unit} is required but its pull_request "
@@ -599,7 +737,10 @@ def run_live(org, public_only, save=None):
 
 # --- self-test: every finding and every refusal must be seen to fire ---
 
-_PR = "on: [push, pull_request]\njobs:\n  {job}:\n    runs-on: x\n"
+# push on the default branch only, as kindkit#26 and rowspec#67 left them: one
+# producer per context on a pull request head
+_ON = "on:\n  push:\n    branches: [main]\n  pull_request:\n"
+_PR = _ON + "jobs:\n  {job}:\n    runs-on: x\n"
 _CHECK = [{"context": "check", "integration_id": ACTIONS_APP_ID}]
 
 
@@ -667,7 +808,7 @@ def selftest():
     kind = [{"context": "kind / conformance", "integration_id": ACTIONS_APP_ID}]
 
     def caller(uses, more=""):
-        return f"on: [push, pull_request]\njobs:\n  kind:\n{more}    uses: {uses}\n"
+        return f"{_ON}jobs:\n  kind:\n{more}    uses: {uses}\n"
 
     def called(jobs):
         return "on:\n  workflow_call:\n    inputs:\n      x:\n        type: string\njobs:\n" + jobs
@@ -888,6 +1029,181 @@ def selftest():
             repo(caller(remote, "    steps:\n      - run: x\n"), kind, called={remote: conf}),
             inc2,
             None,
+        ),
+    ]
+
+    # a second producer: push runs on the pull request's branch as well (#16)
+    def pushed(push, pr="  pull_request:\n"):
+        return repo(_on(push + pr))
+
+    def branches(*patterns, key="branches"):
+        items = "".join(f"      - '{p}'\n" for p in patterns)
+        return pushed(f"  push:\n    {key}:\n{items}")
+
+    dup, inc1 = ["DUPLICATE"], ["INCOMPLETE"]
+    duplicate = [
+        (
+            "on: [push, pull_request]",
+            repo(_PR.format(job="check").replace(_ON, "on: [push, pull_request]\n")),
+            dup,
+        ),
+        ("push: with no filter", pushed("  push:\n"), dup),
+        ("push: {}", pushed("  push: {}\n"), dup),
+        ("push filtered only by paths", pushed("  push:\n    paths: ['a/**']\n"), dup),
+        (
+            "tags and paths, no branch filter",
+            pushed("  push:\n    tags: [v*]\n    paths: [a]\n"),
+            [],
+        ),
+        ("tags-only push is not a producer", pushed("  push:\n    tags: ['v*']\n"), []),
+        (
+            "tags-ignore-only push is not a producer",
+            branches("v*", key="tags-ignore"),
+            [],
+        ),
+        ("push: branches: [main] is clean", branches("main"), []),
+        (
+            "push: branches: [main], tags",
+            pushed("  push:\n    branches: [main]\n    tags: [v*]\n"),
+            [],
+        ),
+        ("push: branches: main (scalar)", pushed("  push:\n    branches: main\n"), []),
+        ("push: branches: ['**']", branches("**"), dup),
+        ("push: branches: ['ma*'] admits max", branches("ma*"), dup),
+        ("push: branches: ['releases/**']", branches("main", "releases/**"), dup),
+        ("push: branches: [develop]", branches("main", "develop"), dup),
+        ("push: branches: ['**', '!feature/**']", branches("**", "!feature/**"), dup),
+        ("push: branches: ['**', '!**'] admits nothing", branches("**", "!**"), []),
+        ("push: branches: ['**', '!**', 'x']", branches("**", "!**", "x"), dup),
+        (
+            "push: branches: [develop, '!develop']",
+            branches("main", "develop", "!develop"),
+            [],
+        ),
+        (
+            "push: branches: ['!main', main]: last match wins",
+            branches("!main", "main"),
+            [],
+        ),
+        ("push: branches: ['[m]ain'] is main only", branches("[m]ain"), []),
+        (
+            "push: branches: ['[l-n]ain', ...] range",
+            branches("[l-n]ain", "!lain", "!nain"),
+            [],
+        ),
+        ("push: branches: ['[l-n]ain', '!lain']", branches("[l-n]ain", "!lain"), dup),
+        ("push: branches: ['[a-c]x', '!ax', '!cx']", branches("[a-c]x", "!ax", "!cx"), dup),
+        ("push: branches: ['[a-z0-9]x', '!*x']", branches("[a-z0-9]x", "!*x"), []),
+        (
+            "push: branches: ['main?', '!mai']: ? is zero or one",
+            branches("main?", "!mai"),
+            [],
+        ),
+        ("push: branches: ['main?']", branches("main?"), dup),
+        ("push: branches: ['mai+n']: + is one or more", branches("mai+n"), dup),
+        (
+            "push: branches: ['main', 'main/'] names no branch",
+            branches("main", "main/"),
+            [],
+        ),
+        ("push: branches: 'ma\\in' escapes", branches("ma\\in"), []),
+        ("push: branches-ignore: [main]", branches("main", key="branches-ignore"), dup),
+        ("push: branches-ignore: ['**']", branches("**", key="branches-ignore"), []),
+        (
+            "push: branches-ignore: ['*'] admits x/x",
+            branches("*", key="branches-ignore"),
+            dup,
+        ),
+        (
+            "push: branches-ignore: ['x', 'x/**']",
+            branches("x", "x/**", key="branches-ignore"),
+            dup,
+        ),
+        # cannot be decided this way: refused, never passed
+        ("push: branches: ['*', '!*'] is refused", branches("*", "!*"), inc1),
+        ("push: branches: ['!**', '*', '!*'] is refused", branches("!**", "*", "!*"), inc1),
+        ("push: branches: ['mai+n', '!maiin'] is refused", branches("mai+n", "!maiin"), inc1),
+        (
+            "push: a finite filter past the sample cap is refused",
+            branches("[a-z][a-z][a-z]", "![a-y]**"),
+            inc1,
+        ),
+        (
+            "push: branches-ignore: ['*', '*/**'] is refused",
+            branches("*", "*/**", key="branches-ignore"),
+            inc1,
+        ),
+        ("push: branches: ['[!m]ain'] is refused", branches("[!m]ain"), inc1),
+        ("push: branches: ['[z-a]'] is refused", branches("main", "[z-a]"), inc1),
+        ("push: branches: ['[A-z]'] is refused", branches("main", "[A-z]"), inc1),
+        ("push: branches: ['?main'] is refused", branches("?main"), inc1),
+        ("push: branches: ['*?'] is refused", branches("*?"), inc1),
+        ("push: branches: ['ma[in'] is refused", branches("ma[in"), inc1),
+        ("push: branches: ['ma]in'] is refused", branches("ma]in"), inc1),
+        ("push: branches: trailing backslash is refused", branches("main\\"), inc1),
+        (
+            "push: branches: with no value is refused",
+            pushed("  push:\n    branches:\n"),
+            inc1,
+        ),
+        (
+            "push: branches and branches-ignore is refused",
+            pushed("  push:\n    branches: [main]\n    branches-ignore: [x]\n"),
+            inc1,
+        ),
+        ("push: [x] is refused", pushed("  push: [x]\n"), inc1),
+        # only a required context counts, and only where pull_request also runs
+        (
+            "on: push alone",
+            repo("on: push\njobs:\n  check:\n    runs-on: x\n"),
+            ["ORPHANED"],
+        ),
+        (
+            "unrequired job on push and pull_request",
+            repo(_PR.format(job="check").replace(_ON, "on: [push, pull_request]\n"), []),
+            ["UNGATED"],
+        ),
+        (
+            "pull_request into another branch",
+            pushed("  push:\n", "  pull_request:\n    branches: [develop]\n"),
+            ["ORPHANED"],
+        ),
+        # a called workflow's contexts: the caller's push decides, not the called file's
+        (
+            "caller on [push, pull_request]",
+            repo(
+                caller(remote).replace(_ON, "on: [push, pull_request]\n"),
+                kind,
+                called={remote: conf},
+            ),
+            dup,
+        ),
+        (
+            "caller on push: [main]; called workflow also on push",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: conf.replace("on:\n", "on:\n  push:\n")},
+            ),
+            [],
+        ),
+        (
+            "local caller on [push, pull_request]",
+            repo(
+                caller(local).replace(_ON, "on: [push, pull_request]\n"),
+                kind,
+                more={".github/workflows/k.yml": conf},
+            ),
+            dup,
+        ),
+        (
+            "caller with an unrequired called job on push",
+            repo(
+                caller(remote).replace(_ON, "on: [push, pull_request]\n"),
+                kind,
+                called={remote: conf + extra},
+            ),
+            ["DUPLICATE", "UNGATED"],
         ),
     ]
     cases = [
@@ -1136,6 +1452,7 @@ def selftest():
             None,
         ),
         *reusable,
+        *((label, snap, want, None) for label, snap, want in duplicate),
     ]
     bad = 0
 
