@@ -195,10 +195,13 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   file from the default branch of the base repository, on that branch's code
   unless it checks out the pull request, so the pull request can neither change
   the job nor, by default, make it fail — §2.2, one layer up. The audit reports
-  a required check whose only producers are `pull_request_target` jobs as
-  TARGET-ONLY. It cannot tell whether the job checks out the pull request, so
-  accepting one is a decision: put the job in the script's `ALLOW`, with the
-  reason.
+  a required check whose only pull request producers are `pull_request_target`
+  jobs as TARGET-ONLY, unless a `push` run on the pull request's branch also
+  produces it (that run tests the pull request's code, and is a DUPLICATE). It
+  cannot tell whether the job checks out the pull request, so accepting one is
+  a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
+  reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
+  that gates nothing.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success

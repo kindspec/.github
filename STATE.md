@@ -299,7 +299,11 @@ longer ORPHANED, and one it produces unrequired is UNGATED. A required check
 whose only producers are `pull_request_target` jobs is TARGET-ONLY instead,
 exit 1: such a job runs on the default branch's code unless it checks out the
 pull request, so it may be unable to fail because of the pull request, and the
-audit cannot tell which. `ALLOW` on the job, with the reason, accepts one. The
+audit cannot tell which. An entry in the script's `TARGET_OK`, with the reason,
+accepts one; `ALLOW` does not, because it silences only UNGATED, and a required
+job in it is checked as usual. A `push` run on the pull request's branch that
+also produces the check tests its code, so that is a DUPLICATE and not
+TARGET-ONLY. The
 `--public-only` run above has none; switching kindkit's `check.yml` from
 `pull_request` to `pull_request_target` in a `--save` snapshot gives TARGET-ONLY
 for `check` and `kind / conformance`, where main gave ORPHANED.

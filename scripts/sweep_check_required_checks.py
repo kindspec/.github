@@ -486,24 +486,65 @@ MUTANTS = [
         ),
     ),
     # TARGET-ONLY (#21 review)
+    ("pr events not recorded", "pr_events_of.setdefault(context, set()).update(events)", "pass"),
     (
         "target-only never reported",
-        'elif pr_events_of.get(context) == {"pull_request_target"}:',
-        "elif False:",
+        '                pr_events_of.get(context) == {"pull_request_target"}\n',
+        "                False\n",
     ),
     (
         "target-only with another event too",
-        'elif pr_events_of.get(context) == {"pull_request_target"}:',
-        'elif "pull_request_target" in pr_events_of.get(context, ()):',
+        '                pr_events_of.get(context) == {"pull_request_target"}\n',
+        '                "pull_request_target" in pr_events_of.get(context, ())\n',
     ),
-    ("pr events not recorded", "pr_events_of.setdefault(context, set()).update(events)", "pass"),
-    ("allowlisted job not a producer", "                    produced.update(contexts)\n", ""),
+    # ALLOW silences UNGATED only; TARGET_OK accepts TARGET-ONLY only (#21 re-review)
     (
-        "allowlisted job counted for target-only",
-        "                    produced.update(contexts)\n",
+        "allowlisted job skips every check",
+        "                if allowed:\n                    used.add((repo, path, job_id))\n",
         (
-            "                    produced.update(contexts)\n"
-            '                    pr_events_of.setdefault(context, set()).add("pull_request_target")\n'
+            "                if allowed:\n                    used.add((repo, path, job_id))\n"
+            "                    continue\n"
+        ),
+    ),
+    (
+        "allow does not silence ungated",
+        "                        if not allowed:\n",
+        "                        if True:\n",
+    ),
+    (
+        "allowlisted unresolved job refused",
+        "                if unresolved and allowed:\n",
+        "                if False:\n",
+    ),
+    ("target_ok ignored", "                and (repo, context) not in target_ok\n", ""),
+    (
+        "target_ok matched by repo only",
+        "and (repo, context) not in target_ok",
+        "and repo not in {k[0] for k in target_ok}",
+    ),
+    (
+        "push producer does not clear target-only",
+        "                and context not in on_push\n",
+        "",
+    ),
+    # the reviewer's S11, S12, S14
+    (
+        "types: [] reads as unrestricted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types and not DEFAULT_TYPES <= types:",
+    ),
+    (
+        "coverage needs only one default type",
+        "[] if DEFAULT_TYPES <= covered else blocked",
+        "[] if DEFAULT_TYPES & covered else blocked",
+    ),
+    (
+        "pairs skipped when every producer is allowlisted",
+        "            for path, job, why in on_pr.get(context, []):\n",
+        (
+            "            for path, job, why in on_pr.get(context, []):\n"
+            "                if all(any(k[:2] == (repo, e[0]) for k in allow) for e in on_pr[context]):\n"
+            "                    continue\n"
         ),
     ),
 ]

@@ -14,7 +14,8 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                omit opened or synchronize, so it does not report on every pull
                request head. With both events, only when the events that are not
                path-filtered do not cover both types between them; each blocked
-               event is then named
+               event is then named. `types: []` counts as no types (GitHub does
+               not document it), so it is a TRIGGER
   CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
                success: it has a job-level `if:`, or something in its `needs:`
                chain has one or is not itself required. When the skipped job calls
@@ -39,11 +40,14 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                runs a job of the same context on either, into the default
                branch. Each pair of workflows is reported once, whether or not
                ALLOW names either job
-  TARGET-ONLY  a required check's only producers are pull_request_target jobs.
-               Such a job runs the workflow from the default branch of the base
-               repository, on that branch's code unless it checks out the pull
-               request, so it may be unable to fail because of the pull request
-               (AGENTS.md 2.2). ALLOW on the job, with the reason, accepts it
+  TARGET-ONLY  a required check's only pull request producers are
+               pull_request_target jobs, and no push run on a pull request's
+               branch produces it (that one would test the pull request's code,
+               and is a DUPLICATE). Such a job runs the workflow from the default
+               branch of the base repository, on that branch's code unless it
+               checks out the pull request, so it may be unable to fail because
+               of the pull request (AGENTS.md 2.2). An entry in TARGET_OK, with
+               the reason, accepts it, and only it
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 pull_request_target counts as a pull request event: its check runs carry the
@@ -55,7 +59,8 @@ workflow file from the default branch of the base repository, with GITHUB_SHA
 that branch's last commit, so a pull request cannot change what such a job does,
 and the job tests the pull request's code only if it checks that out. A
 pull_request_target job that is meant to gate nothing, such as a labeller,
-belongs in ALLOW with that reason. A job in ALLOW still produces its contexts.
+belongs in ALLOW with that reason. ALLOW silences only UNGATED: a job in it
+still produces its contexts, and if one is required it is checked as usual.
 
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
 repositories read; an API or authentication failure; fewer repositories listed
@@ -109,8 +114,13 @@ import urllib.parse
 # Jobs that run on pull requests but deliberately gate nothing, as
 # (repo, workflow path, job id): reason. Jobs that never run on a pull request
 # (rowspec's release.yml: gate, build, publish run on v* tags) are excluded by
-# their triggers and need no entry here.
+# their triggers and need no entry here. An entry only silences UNGATED: a
+# required job in ALLOW is checked like any other.
 ALLOW = {}
+
+# Required checks accepted although only pull_request_target produces them, as
+# (repo, context): reason, such as "the job checks out the pull request head".
+TARGET_OK = {}
 
 ACTIONS_APP_ID = 15368  # GitHub Actions; a context from another app is not a workflow job
 DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unreported
@@ -583,7 +593,7 @@ def _skippable(job_id, jobs, required, calls, seen=frozenset()):
     return None
 
 
-def evaluate(snapshot, allow):
+def evaluate(snapshot, allow, target_ok=()):
     findings, incomplete, used = [], [], set()
     stats = {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}
     for repo, data in sorted(snapshot.items()):
@@ -641,14 +651,11 @@ def evaluate(snapshot, allow):
                         calls[job_id] = called
             for job_id, context, _, _, unresolved, _ in jobs.values():
                 where = f"{repo}: {path}: job '{job_id}'"
-                if (repo, path, job_id) in allow:
-                    # it still reports its contexts; ALLOW only accepts what it gates
-                    stats["pr_jobs"] += 1
+                allowed = (repo, path, job_id) in allow
+                if allowed:
                     used.add((repo, path, job_id))
-                    contexts = (
-                        [c[1] for c in calls[job_id].values()] if job_id in calls else [context]
-                    )
-                    produced.update(contexts)
+                if unresolved and allowed:
+                    stats["pr_jobs"] += 1
                     continue
                 if unresolved:
                     stats["pr_jobs"] += 1
@@ -667,10 +674,11 @@ def evaluate(snapshot, allow):
                     produced.add(context)
                     pr_events_of.setdefault(context, set()).update(events)
                     if context not in required:
-                        findings.append(
-                            f"UNGATED      {unit} runs on pull requests; "
-                            f"'{context}' is not a required check"
-                        )
+                        if not allowed:
+                            findings.append(
+                                f"UNGATED      {unit} runs on pull requests; "
+                                f"'{context}' is not a required check"
+                            )
                         continue
                     if pushed:
                         findings.append(
@@ -751,12 +759,17 @@ def evaluate(snapshot, allow):
                     f"ORPHANED     {repo}: required check '{context}' is produced by no "
                     f"job that reports on a pull request into '{branch}'{note}"
                 )
-            elif pr_events_of.get(context) == {"pull_request_target"}:
+            # a push run on the pull request's branch tests its code; that is DUPLICATE
+            elif (
+                pr_events_of.get(context) == {"pull_request_target"}
+                and context not in on_push
+                and (repo, context) not in target_ok
+            ):
                 findings.append(
-                    f"TARGET-ONLY  {repo}: required check '{context}' is produced only on "
-                    "pull_request_target, which runs the default branch's workflow on the "
-                    "default branch's code unless the job checks out the pull request, so "
-                    "it may be unable to fail because of the pull request"
+                    f"TARGET-ONLY  {repo}: required check '{context}' is reported on a pull "
+                    "request only by pull_request_target, which runs the default branch's "
+                    "workflow on the default branch's code unless the job checks out the pull "
+                    "request, so it may be unable to fail because of the pull request"
                 )
             # every pair of workflows producing it on a pull request, ALLOW or not
             by_path = {}
@@ -904,7 +917,7 @@ def run_live(org, public_only, save=None):
     if save:
         with open(save, "w") as fh:
             json.dump(snapshot, fh, indent=1, sort_keys=True)
-    return (*evaluate(snapshot, ALLOW), skipped)
+    return (*evaluate(snapshot, ALLOW, TARGET_OK), skipped)
 
 
 # --- self-test: every finding and every refusal must be seen to fire ---
@@ -939,9 +952,9 @@ def _fake_api(responses):
 
 
 def selftest():
-    def run(snapshot, allow=None):
+    def run(snapshot, allow=None, *target_ok):
         try:
-            f, inc, _ = evaluate(snapshot, allow or {})
+            f, inc, _ = evaluate(snapshot, allow or {}, *target_ok)
         except Exception as e:  # noqa: BLE001 -- a crash is a failed case
             return [f"CRASH {type(e).__name__}"], -1
         return [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc), exit_code(f, inc)
@@ -1645,6 +1658,13 @@ def selftest():
             ),
             dup,
         ),
+        # types: [] is read as no types at all; GitHub does not document it
+        ("types: []", repo(target("  pull_request:\n    types: []\n")), ["TRIGGER"]),
+        (
+            "types: [opened] alone",
+            repo(target("  pull_request:\n    types: [opened]\n")),
+            ["TRIGGER"],
+        ),
         (
             "two pull_request_target workflows",
             beside(pr_target, pr_target),
@@ -1707,6 +1727,8 @@ def selftest():
     ]
     # ALLOW neither hides a pull request pair nor counts as a producer's absence
     first = {("r", "a.yml", "check"): "test"}
+    mine = {("r", "w.yml", "check"): "test"}
+    ok = {("r", "check"): "test"}
     pr_allow = [
         (
             "allowlisted first producer still pairs",
@@ -1727,10 +1749,70 @@ def selftest():
             first,
         ),
         (
-            "allowlisted pull_request_target-only producer is accepted",
-            repo(pr_target),
+            "every producer allowlisted still pairs",
+            repo(pr_plain, more={"a.yml": pr_plain}),
+            dup,
+            {**first, ("r", "w.yml", "check"): "test"},
+        ),
+        # ALLOW silences UNGATED only; TARGET_OK accepts TARGET-ONLY, and nothing else
+        ("ALLOW does not accept target-only", repo(pr_target), ["TARGET-ONLY"], mine),
+        (
+            "allowlisted matrix job gating nothing is not refused",
+            repo(pr_plain + "    strategy:\n      matrix:\n        v: [1]\n", []),
             [],
-            {("r", "w.yml", "check"): "test"},
+            mine,
+        ),
+        (
+            "ALLOW on a required job keeps its own push DUPLICATE",
+            repo(target("  pull_request_target:\n  push:\n")),
+            dup,
+            mine,
+        ),
+        (
+            "ALLOW on a required job keeps its CONDITIONAL",
+            repo(pr_target + "    if: false\n"),
+            ["CONDITIONAL", "TARGET-ONLY"],
+            mine,
+        ),
+        (
+            "ALLOW on a required pull_request job: target-only needs every producer",
+            repo(pr_target, more={"a.yml": pr_plain}),
+            dup,
+            first,
+        ),
+        ("TARGET_OK accepts target-only", repo(pr_target), [], None, ok),
+        (
+            "TARGET_OK keeps CONDITIONAL",
+            repo(pr_target + "    if: false\n"),
+            ["CONDITIONAL"],
+            None,
+            ok,
+        ),
+        (
+            "TARGET_OK for another context accepts nothing",
+            repo(pr_target),
+            ["TARGET-ONLY"],
+            None,
+            {("r", "lint"): "test"},
+        ),
+        # a push run on the pull request's branch tests its code: DUPLICATE, not TARGET-ONLY
+        (
+            "pull_request_target and push in one workflow",
+            repo(target("  pull_request_target:\n  push:\n")),
+            dup,
+            None,
+        ),
+        (
+            "pull_request_target, and push in another workflow",
+            beside(push_job(), pr_target),
+            dup,
+            None,
+        ),
+        (
+            "pull_request_target, push to the default branch only elsewhere",
+            beside(push_job(on="\n  push:\n    branches: [main]\n"), pr_target),
+            ["TARGET-ONLY"],
+            None,
         ),
     ]
     cases = [
@@ -1999,8 +2081,8 @@ def selftest():
         mark = "ok  " if ok else "FAIL"
         print(f"{mark} {label}: got {got} exit {code}, want {want} exit {want_code}")
 
-    for label, snap, want, allow in cases:
-        got, code = run(snap, allow)
+    for label, snap, want, allow, *target_ok in cases:
+        got, code = run(snap, allow, *target_ok)
         want_code = 1 if set(want) - {"INCOMPLETE"} else 2 if want else 0  # not via exit_code
         report(label, got, code, want, want_code)
 
@@ -2178,7 +2260,7 @@ def main():
     skipped = 0
     if args.load:
         with open(args.load) as fh:
-            findings, incomplete, stats = evaluate(json.load(fh), ALLOW)
+            findings, incomplete, stats = evaluate(json.load(fh), ALLOW, TARGET_OK)
     else:
         findings, incomplete, stats, skipped = run_live(args.org, args.public_only, args.save)
     for line in findings:

@@ -7,7 +7,8 @@ Org-level defaults for [kindspec](https://github.com/kindspec).
   or a required check also comes from a `push` run on the pull request's
   branch, in the same workflow or another, or from a second workflow that runs
   on the pull request (`pull_request` or `pull_request_target`), or comes only
-  from `pull_request_target`, which runs the default branch's code; its mutation
+  from `pull_request_target`, which runs the default branch's code (accepted
+  per check through `TARGET_OK`); its mutation
   sweep is `scripts/sweep_check_required_checks.py`.
   `.github/workflows/required-checks-audit.yml` runs it daily, and on demand.
 - `profile/README.md` — the org landing page.
