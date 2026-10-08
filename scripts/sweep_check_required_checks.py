@@ -32,10 +32,7 @@ MUTANTS = [
         "            elif context not in produced:\n",
         "            elif False:\n",
     ),
-    ("path filter ignored", "                if filtered:\n", "                if False:\n"),
     ("paths-ignore ignored", '{"paths", "paths-ignore"}', '{"paths"}'),
-    ("restrictive types ignored", "                if types:\n", "                if False:\n"),
-    ("types check inverted", "not DEFAULT_TYPES <= types", "DEFAULT_TYPES <= types"),
     (
         "conditional never reported",
         "                    if skip:\n",
@@ -44,9 +41,9 @@ MUTANTS = [
     ("job-level if ignored", "    if jobs[job_id][2]:\n", "    if False:\n"),
     ("unrequired need ignored", "if any(c not in required for c in contexts):", "if False:"),
     (
-        "any pr-ish event counts",
-        'if "pull_request" in on:',
-        'if {"pull_request", "pull_request_target", "merge_group"} & set(on):',
+        "merge_group counted as a pr event",
+        'PR_EVENTS = ("pull_request", "pull_request_target")',
+        'PR_EVENTS = ("pull_request", "pull_request_target", "merge_group")',
     ),
     (
         "branches-ignore ignored",
@@ -110,16 +107,6 @@ MUTANTS = [
             '        text = next((v for k, v in (data.get("called") or {}).items()'
             ' if k.split("@")[0] == uses.split("@")[0]), None)\n'
         ),
-    ),
-    (
-        "path filter ignored for called jobs",
-        "                    if filtered:\n",
-        "                    if filtered and not cid:\n",
-    ),
-    (
-        "types ignored for called jobs",
-        "                    if types:\n",
-        "                    if types and not cid:\n",
     ),
     (
         "called jobs not counted",
@@ -335,23 +322,29 @@ MUTANTS = [
     ),
     (
         "own undecided push refused again",
-        "if other != path and c in (None, context)",
-        "if c in (None, context)",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if c in (None, context)",
     ),
     (
         "undecided push refused for any context",
-        "if other != path and c in (None, context)",
-        "if other != path",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path",
     ),
     (
         "unknown-name push job refused only by name",
-        "if other != path and c in (None, context)",
-        "if other != path and c == context",
+        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path and c == context",
     ),
     (
         "push doubts never refused",
-        "                    if doubts:\n",
-        "                    if False:\n",
+        (
+            "                    if doubts:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a push producer'
+        ),
+        (
+            "                    if False:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a push producer'
+        ),
     ),
     (
         "inactive workflow pushes",
@@ -381,8 +374,178 @@ MUTANTS = [
     ),
     (
         "push producers not collected",
-        "on_push, push_unknown = push_producers(data, branch)",
+        "on_push, push_unknown = producers(data, branch, push_duplicates)",
         "on_push, push_unknown = {}, []",
+    ),
+    # DUPLICATE: a second producer on the pull request itself (#20)
+    (
+        "pull_request_target not a pr event",
+        'PR_EVENTS = ("pull_request", "pull_request_target")',
+        'PR_EVENTS = ("pull_request",)',
+    ),
+    (
+        "pr producers not collected",
+        "on_pr, pr_unknown = producers(data, branch, pr_admits)",
+        "on_pr, pr_unknown = {}, []",
+    ),
+    ("two-event workflow not flagged", "if len(events) > 1:", "if False:"),
+    (
+        "pr branch filter ignored elsewhere",
+        '    events = pr_events(on, branch)\n    return "on "',
+        '    events = [e for e in PR_EVENTS if e in on]\n    return "on "',
+    ),
+    (
+        "own undecided pr refused again",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if c in (None, context)",
+    ),
+    (
+        "undecided pr refused for any context",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path",
+    ),
+    (
+        "unknown-name pr job refused only by name",
+        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path and c == context",
+    ),
+    (
+        "pr doubts never refused",
+        (
+            "                    if doubts:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a pull request producer'
+        ),
+        (
+            "                    if False:\n                        incomplete.append(\n"
+            '                            f"{unit}: not evaluated for a pull request producer'
+        ),
+    ),
+    # a mutant that excluded only disabled_manually survived before (#20)
+    (
+        "only disabled_manually excluded",
+        '            if state != "active":\n',
+        '            if state == "disabled_manually":\n',
+    ),
+    (
+        "only disabled_manually excluded from producers",
+        'if data["workflow_state"].get(path) != "active":',
+        'if data["workflow_state"].get(path) == "disabled_manually":',
+    ),
+    # PATH-FILTER and TRIGGER, per event; a covered head clears them (#21 review)
+    ("path filter ignored", 'blocked.append(("PATH-FILTER", event, None))', "pass"),
+    ("restrictive types ignored", 'blocked.append(("TRIGGER", event, sorted(types)))', "pass"),
+    (
+        "types check inverted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types is not None and DEFAULT_TYPES <= types:",
+    ),
+    (
+        "filtered event counts as covering",
+        "        else:\n            covered |=",
+        "        if True:\n            covered |=",
+    ),
+    ("covering ignored", "[] if DEFAULT_TYPES <= covered else blocked", "blocked"),
+    (
+        "default types do not cover",
+        "covered |= DEFAULT_TYPES if types is None else types",
+        "covered |= set() if types is None else types",
+    ),
+    (
+        "blocks ignored for called jobs",
+        "                    for kind, event, types in blocked:\n",
+        "                    for kind, event, types in [] if cid else blocked:\n",
+    ),
+    ("every block named a path filter", 'if kind == "PATH-FILTER":', "if True:"),
+    (
+        "types with opened and synchronize counted as restricted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types is not None:",
+    ),
+    (
+        "scalar types not wrapped",
+        "set(map(str, types if isinstance(types, list) else [types]))",
+        "set(map(str, types))",
+    ),
+    # pull request pairs, independent of ALLOW (#21 review)
+    (
+        "pr pairs never reported",
+        "for a, b in itertools.combinations(sorted(by_path), 2):",
+        "for a, b in []:",
+    ),
+    (
+        "pr pairs only between the first two",
+        "itertools.combinations(sorted(by_path), 2)",
+        "itertools.combinations(sorted(by_path)[:2], 2)",
+    ),
+    (
+        "allowlisted workflow dropped from pr pairs",
+        "            for path, job, why in on_pr.get(context, []):\n",
+        (
+            "            for path, job, why in [e for e in on_pr.get(context, [])"
+            " if not any(k[:2] == (repo, e[0]) for k in allow)]:\n"
+        ),
+    ),
+    # TARGET-ONLY (#21 review)
+    ("pr events not recorded", "pr_events_of.setdefault(context, set()).update(events)", "pass"),
+    (
+        "target-only never reported",
+        '                pr_events_of.get(context) == {"pull_request_target"}\n',
+        "                False\n",
+    ),
+    (
+        "target-only with another event too",
+        '                pr_events_of.get(context) == {"pull_request_target"}\n',
+        '                "pull_request_target" in pr_events_of.get(context, ())\n',
+    ),
+    # ALLOW silences UNGATED only; TARGET_OK accepts TARGET-ONLY only (#21 re-review)
+    (
+        "allowlisted job skips every check",
+        "                if allowed:\n                    used.add((repo, path, job_id))\n",
+        (
+            "                if allowed:\n                    used.add((repo, path, job_id))\n"
+            "                    continue\n"
+        ),
+    ),
+    (
+        "allow does not silence ungated",
+        "                        if not allowed:\n",
+        "                        if True:\n",
+    ),
+    (
+        "allowlisted unresolved job refused",
+        "                if unresolved and allowed:\n",
+        "                if False:\n",
+    ),
+    ("target_ok ignored", "                and (repo, context) not in target_ok\n", ""),
+    (
+        "target_ok matched by repo only",
+        "and (repo, context) not in target_ok",
+        "and repo not in {k[0] for k in target_ok}",
+    ),
+    (
+        "push producer does not clear target-only",
+        "                and context not in on_push\n",
+        "",
+    ),
+    # the reviewer's S11, S12, S14
+    (
+        "types: [] reads as unrestricted",
+        "if types is not None and not DEFAULT_TYPES <= types:",
+        "if types and not DEFAULT_TYPES <= types:",
+    ),
+    (
+        "coverage needs only one default type",
+        "[] if DEFAULT_TYPES <= covered else blocked",
+        "[] if DEFAULT_TYPES & covered else blocked",
+    ),
+    (
+        "pairs skipped when every producer is allowlisted",
+        "            for path, job, why in on_pr.get(context, []):\n",
+        (
+            "            for path, job, why in on_pr.get(context, []):\n"
+            "                if all(any(k[:2] == (repo, e[0]) for k in allow) for e in on_pr[context]):\n"
+            "                    continue\n"
+        ),
     ),
 ]
 

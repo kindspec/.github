@@ -241,11 +241,11 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 `scripts/check_required_checks.py`.
 
 **The required-checks audit exits 0 on the org.** On 2026-10-08, with the
-DUPLICATE rule of .github#16 and .github#18:
+DUPLICATE rule of .github#16, .github#18 and .github#20:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
-    6 repositories, 7 workflows, 7 pull_request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+    6 repositories, 7 workflows, 7 pull request jobs, 7 required checks: 0 finding(s), 0 not evaluated
 
 .github#15 taught the script to expand a job that calls a reusable workflow
 into one `<caller> / <called job>` context per called job. A call into another
@@ -283,9 +283,57 @@ refused, exit 2. The issue's reproduction, a `push.yml` with
 `on: push` and a job `check` added to kindkit in a `--save` snapshot, gives one
 DUPLICATE for `check`.
 
-**What it still does not see: two `pull_request` producers.** Two workflows
-that both run a job of the same name on `pull_request` also give a required
-context two suites. Nothing flags that yet.
+**And a second producer on the pull request itself** (.github#20). Two active
+workflows that run a job of the same context on a pull request into the default
+branch, on `pull_request` or `pull_request_target`, are a DUPLICATE, reported
+once per pair whether or not `ALLOW` names either job; so is one workflow on
+both events. A job there whose context it
+cannot resolve is refused, exit 2. The issue's reproduction, a `second.yml` with
+a job `check` added to kindkit in a `--save` snapshot, gives one DUPLICATE for
+`check` on `pull_request` and one on `pull_request_target`; main gives 0
+findings for both.
+
+**`pull_request_target` reports on the pull request's head**, so the audit now
+counts it as a pull request event: a required check it alone produces is no
+longer ORPHANED, and one it produces unrequired is UNGATED. A required check
+whose only producers are `pull_request_target` jobs is TARGET-ONLY instead,
+exit 1: such a job runs on the default branch's code unless it checks out the
+pull request, so it may be unable to fail because of the pull request, and the
+audit cannot tell which. An entry in the script's `TARGET_OK`, with the reason,
+accepts one; `ALLOW` does not, because it silences only UNGATED, and a required
+job in it is checked as usual. A `push` run on the pull request's branch that
+also produces the check tests its code, so that is a DUPLICATE and not
+TARGET-ONLY. The
+`--public-only` run above has none; switching kindkit's `check.yml` from
+`pull_request` to `pull_request_target` in a `--save` snapshot gives TARGET-ONLY
+for `check` and `kind / conformance`, where main gave ORPHANED.
+
+`pull_request_target` check runs carry the pull request's head sha:
+python/cpython run 25066296099 (fork PR 149109, the issue's case),
+electron/electron run 37748122900 on PR 54550's head `a965781` (a same-repo
+branch), and react/react run 37730121633 on fork PR 37788's head `7af445b`.
+For the last two, `gh api repos/<o>/<r>/commits/<sha>/check-runs` lists the job,
+and the GraphQL `statusCheckRollup` of the PR's last commit lists it with
+`event: pull_request_target`. GitHub's
+"Troubleshooting required status checks" (github/docs
+`content/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks.md`,
+lines 55–64 at `60f9f34`) says: "For checks created by workflow
+jobs to be evaluated for a pull request, the workflow run must be triggered by
+one of these events", and lists `push`, `pull_request`, `pull_request_review`,
+`pull_request_target`, `deployment` and `deployment_status`. It names
+`workflow_dispatch` on the head branch as one whose checks "do not satisfy a
+required status check in a branch ruleset". That a ruleset accepts a
+`pull_request_target` check is the documentation's word; no kindspec ruleset
+has been watched doing it. A `pull_request_target` job runs the workflow file
+from the default branch of the base repository, with `GITHUB_SHA` that branch's
+last commit, so a pull request cannot change it, and it tests the pull request's
+code only if it checks that out.
+
+**What it still does not see.** The same page also lists `pull_request_review`,
+`deployment` and `deployment_status` as events whose checks count; the audit
+reads none of them as a producer, for DUPLICATE or anything else. Two jobs of
+one workflow with the same context (`name: check` on two job ids) are not
+flagged either. `evaluate` returns no finding for each.
 
 #### Security settings, org-wide
 
@@ -666,10 +714,11 @@ and these two had, at ten against twelve:
 - a CI mutation step accepting any exit 0, so `true` passed as a mutation gate
   that had run nothing (kindkit#24 review)
 - a required-checks audit reporting 0 findings for a required check produced
-  only by `merge_group`, `pull_request_target`, or a `pull_request` filtered to
-  another branch, none of which ever reports on the pull request it gates
-  (.github#10 review; reproduced with `--load` against that pull request's
-  first commit, `0970870`)
+  only by `merge_group` or a `pull_request` filtered to another branch, neither
+  of which ever reports on the pull request it gates (.github#10 review;
+  reproduced with `--load` against that pull request's first commit,
+  `0970870`). That review also put `pull_request_target` in this list, which
+  was wrong: its check runs attach to the pull request's head (.github#20)
 - the same audit reporting 0 findings while kindkit's required `check` and
   `kind / conformance` ran twice on a pull request head, once from a bare
   `push` and once from `pull_request`, because it read only the
@@ -678,6 +727,11 @@ and these two had, at ten against twelve:
   producer was a `push` job of the same name in a different workflow, because
   it read only each workflow's own `push` (.github#18; reproduced with `--load`
   on a `--save` snapshot with a `push.yml` added to kindkit)
+- the same audit, with that fixed, still reporting 0 findings when the second
+  producer was a job of the same name in another workflow on `pull_request` or
+  `pull_request_target`, because it looked for a second producer only on `push`
+  (.github#20; reproduced with `--load` on a `--save` snapshot with a
+  `second.yml` added to kindkit)
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)

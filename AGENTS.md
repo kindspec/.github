@@ -140,7 +140,7 @@ adversarial discipline, which is the more important of the two clauses, is
 honour-system and will stay that way until something can attest to it. Say so
 rather than implying the green tick covers it.
 
-### 3.2 Four ways this gate can quietly stop working
+### 3.2 Five ways this gate can quietly stop working
 
 Each is the pattern in §2.2, one layer up in the infrastructure.
 
@@ -179,10 +179,29 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   the gate resolves each required name to whichever run it finds
   (kindspec/rowspec#43). The second producer can also be a `push` job in a
   different workflow with the same name. Restrict `push` to the default branch,
-  or to tags. The audit reports either as DUPLICATE: `push` with no branch
-  filter, a `branches-ignore` that leaves some other branch, or `branches` that
-  match one. It refuses, exit 2, a filter it cannot settle either way, and a
-  `push` job elsewhere whose name it cannot resolve.
+  or to tags. It can also run on the pull request itself: a job of the same
+  name in another workflow on `pull_request` or `pull_request_target`, or one
+  workflow on both. The audit reports each of these as DUPLICATE: `push` with
+  no branch filter, a `branches-ignore` that leaves some other branch, or
+  `branches` that match one; or a second pull request producer into the
+  default branch, whether or not `ALLOW` names either job. It refuses, exit 2,
+  a filter it cannot settle either way, and a job elsewhere whose name it
+  cannot resolve.
+- **A check that only `pull_request_target` runs may be unable to fail.** Its
+  check runs land on the pull request's head like `pull_request`'s do, and
+  GitHub's documentation says they satisfy a required check
+  (`content/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks.md`
+  in github/docs, lines 55–64 at `60f9f34`). But the job runs the workflow
+  file from the default branch of the base repository, on that branch's code
+  unless it checks out the pull request, so the pull request can neither change
+  the job nor, by default, make it fail — §2.2, one layer up. The audit reports
+  a required check whose only pull request producers are `pull_request_target`
+  jobs as TARGET-ONLY, unless a `push` run on the pull request's branch also
+  produces it (that run tests the pull request's code, and is a DUPLICATE). It
+  cannot tell whether the job checks out the pull request, so accepting one is
+  a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
+  reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
+  that gates nothing.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success
