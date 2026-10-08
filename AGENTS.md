@@ -166,8 +166,7 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   merge, which is exactly the shape of a check nobody is running.
   `python3 scripts/check_required_checks.py` (in this repository) compares every
   pull_request job against the required checks, in both directions, and fails
-  on a gap, and on each hazard in this list that a workflow file shows, except
-  a second producer in a different workflow (kindspec/.github#18).
+  on a gap, and on each hazard in this list that a workflow file shows.
   `.github/workflows/required-checks-audit.yml` runs it daily over
   each public repository's default branch; a red run there is a gap, or
   something the script could not evaluate, and both mean read the log.
@@ -178,10 +177,12 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   that runs on `pull_request` and also on `push` to the pull request's branch
   reports every one of its contexts twice on that head, from two suites, and
   the gate resolves each required name to whichever run it finds
-  (kindspec/rowspec#43). Restrict `push` to the default branch, or to tags. The
-  audit reports this as DUPLICATE: `push` with no branch filter, a
-  `branches-ignore` that leaves some other branch, or `branches` that match one.
-  A filter it cannot settle either way it refuses, exit 2.
+  (kindspec/rowspec#43). The second producer can also be a `push` job in a
+  different workflow with the same name. Restrict `push` to the default branch,
+  or to tags. The audit reports either as DUPLICATE: `push` with no branch
+  filter, a `branches-ignore` that leaves some other branch, or `branches` that
+  match one. It refuses, exit 2, a filter it cannot settle either way, and a
+  `push` job elsewhere whose name it cannot resolve.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
 `git push --dry-run` does not evaluate server-side rules and will report success

@@ -25,7 +25,12 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                one, or branches that match one. A pull request head then carries
                the context from two suites, and the merge takes either
                (kindspec/rowspec#43). A tags-only push does not count. For a
-               called workflow's contexts, the caller's push decides
+               called workflow's contexts, the caller's push decides. The same
+               holds when the push producer is a job in another active workflow
+               whose push admits such a branch: its context ('<caller> /
+               <called>' for a call), by `name:` or else its id, equals the
+               required one. Its `if:` does not matter: a skipped job still
+               reports its context
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
@@ -38,7 +43,9 @@ non-mapping job); a matrix,
 expression- or block-named job whose context names this script does not expand;
 or, for a required job, a push branch filter this script cannot settle either
 way (it decides by finding a branch the filter admits, or by enumerating every
-branch it could).
+branch it could), in its own workflow or in another whose job has the same
+context; or a job of another workflow that runs on such a push and whose
+context is not known (matrix, expression or block name, or a call not read).
 A run that could not look must not report a pass.
 
 A job that calls a reusable workflow (`uses: ./.github/workflows/F.yml`, or
@@ -461,6 +468,47 @@ def expand(context, uses, data):
     return called, None
 
 
+def push_producers(data, branch):
+    """The contexts each active workflow produces on push to a branch other than branch.
+
+    Returns ({context: [(path, producing job, why)]}, [(path, context, why not evaluated)]),
+    where a context of None could be any. A job's `if:` does not matter: a skipped job
+    still reports its context. A workflow that cannot be read is refused by evaluate.
+    """
+    found, unknown = {}, []
+    for path, text in sorted(data["workflows"].items()):
+        if data["workflow_state"].get(path) != "active":
+            continue
+        try:
+            workflow = parse_yaml(text)
+            on = _events(workflow)
+            jobs = list(jobs_of(workflow))
+        except Unsupported:
+            continue
+        try:
+            why, doubt = push_duplicates(on, branch), None
+        except Unsupported as e:
+            why, doubt = None, str(e)
+        if not why and not doubt:
+            continue
+        for job_id, context, _, _, unresolved, uses in jobs:
+            units = [(f"job '{job_id}'", context)]
+            if uses and not unresolved:
+                called, unresolved = expand(context, uses, data)
+                units = [
+                    (f"job '{job_id}' (called job '{c}')", j[1]) for c, j in (called or {}).items()
+                ]
+            if unresolved:
+                unknown.append((path, None, f"job '{job_id}': {unresolved}"))
+                continue
+            for job, context in units:
+                if doubt:
+                    unknown.append((path, context, doubt))
+                else:
+                    found.setdefault(context, []).append((path, job, why))
+    return found, unknown
+
+
 def _skippable(job_id, jobs, required, calls, seen=frozenset()):
     """Why job_id can be skipped on a pull request, or None."""
     if jobs[job_id][2]:
@@ -504,6 +552,7 @@ def evaluate(snapshot, allow):
             required.setdefault(c["context"], c.get("integration_id"))
         stats["required"] += len(required)
         produced, elsewhere, blind = set(), {}, False
+        on_push, push_unknown = push_producers(data, branch)
         for path, text in sorted(data["workflows"].items()):
             stats["workflows"] += 1
             state = data["workflow_state"].get(path)
@@ -573,6 +622,25 @@ def evaluate(snapshot, allow):
                         )
                     elif unknown:
                         incomplete.append(f"{unit}: not evaluated for a push producer: {unknown}")
+                    # its own push is the finding above; another workflow's is this one
+                    for other, job, why in on_push.get(context, []):
+                        if other != path:
+                            findings.append(
+                                f"DUPLICATE    {unit} is required, and {other}: {job} also "
+                                f"produces '{context}' on push to other branches ({why}), so a "
+                                "pull request head can carry it from two suites and the merge "
+                                "takes either"
+                            )
+                    doubts = [
+                        f"{other}: {why}"
+                        for other, c, why in push_unknown
+                        if other != path and c in (None, context)
+                    ]
+                    if doubts:
+                        incomplete.append(
+                            f"{unit}: not evaluated for a push producer in another workflow: "
+                            + "; ".join(doubts)
+                        )
                     if filtered:
                         findings.append(
                             f"PATH-FILTER  {unit} is required but its pull_request "
@@ -1233,6 +1301,116 @@ def selftest():
             ["DUPLICATE", "UNGATED"],
         ),
     ]
+
+    # a second producer in another workflow: its push runs on the pull request's branch (#18)
+    def beside(push_wf, wf=None, required=_CHECK):
+        return repo(wf or _PR.format(job="check"), required, more={"p.yml": push_wf})
+
+    def push_job(head="check:", body="", on="push"):
+        return f"on: {on}\njobs:\n  {head}\n    runs-on: x\n{body}"
+
+    filtered = "\n  push:\n    branches: ['*', '!*']\n"
+    disabled = beside(push_job())
+    disabled["r"]["workflow_state"]["p.yml"] = "disabled_manually"
+    pushed_caller = f"on: push\njobs:\n  kind:\n    uses: {remote}\n"
+    cross = [
+        ("push job of the same id in another workflow", beside(push_job()), dup),
+        (
+            "push job named by name: in another workflow",
+            beside(push_job("p:", "    name: check\n")),
+            dup,
+        ),
+        (
+            "push job with an if: still reports",
+            beside(push_job(body="    if: github.ref == 'refs/heads/main'\n")),
+            dup,
+        ),
+        (
+            "push with branches-ignore in another workflow",
+            beside(push_job(on="\n  push:\n    branches-ignore: [main]\n")),
+            dup,
+        ),
+        (
+            "called workflow under push in another workflow",
+            repo(
+                caller(local),
+                kind,
+                more={".github/workflows/k.yml": conf, "p.yml": pushed_caller},
+                called={remote: conf},
+            ),
+            dup,
+        ),
+        (
+            "own push and another workflow's push are two findings",
+            beside(push_job(), _PR.format(job="check").replace(_ON, "on: [push, pull_request]\n")),
+            ["DUPLICATE", "DUPLICATE"],
+        ),
+        (
+            "unrequired context with a push producer elsewhere",
+            beside(push_job(), required=[]),
+            ["UNGATED"],
+        ),
+        # negative controls
+        (
+            "push to the default branch only, in another workflow",
+            beside(push_job(on="\n  push:\n    branches: [main]\n")),
+            [],
+        ),
+        (
+            "tags-only push in another workflow",
+            beside(push_job(on="\n  push:\n    tags: [v*]\n")),
+            [],
+        ),
+        ("push job with a different id", beside(push_job("lint:")), []),
+        (
+            "push job id matches but name: differs",
+            beside(push_job("check:", "    name: lint\n")),
+            [],
+        ),
+        ("disabled push workflow", disabled, []),
+        (
+            "called workflow under push with other job names",
+            repo(
+                caller(local),
+                kind,
+                more={".github/workflows/k.yml": conf, "p.yml": pushed_caller},
+                called={remote: called("  lint:\n    runs-on: x\n")},
+            ),
+            [],
+        ),
+        ("undecided push filter, different name", beside(push_job("lint:", on=filtered)), []),
+        (
+            "expression name under a default-only push",
+            beside(
+                push_job(
+                    "p:", "    name: ${{ github.ref_name }}\n", "\n  push:\n    branches: [main]\n"
+                )
+            ),
+            [],
+        ),
+        # cannot be decided: refused, never passed
+        (
+            "push job with an expression name is refused",
+            beside(push_job("p:", "    name: ${{ github.ref_name }}\n")),
+            inc1,
+        ),
+        (
+            "push matrix job is refused",
+            beside(push_job(body="    strategy:\n      matrix:\n        v: [1]\n")),
+            inc1,
+        ),
+        ("undecided push filter, same name, is refused", beside(push_job(on=filtered)), inc1),
+        (
+            "unreadable called workflow under push is refused",
+            repo(
+                caller(local),
+                kind,
+                more={".github/workflows/k.yml": conf, "p.yml": pushed_caller},
+                called={},
+            ),
+            inc1,
+        ),
+    ]
     cases = [
         ("clean", repo(_PR.format(job="check")), [], None),
         ("named job is clean", repo(_PR.format(job="j") + "    name: check\n"), [], None),
@@ -1480,6 +1658,7 @@ def selftest():
         ),
         *reusable,
         *((label, snap, want, None) for label, snap, want in duplicate),
+        *((label, snap, want, None) for label, snap, want in cross),
     ]
     bad = 0
 

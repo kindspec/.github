@@ -241,7 +241,7 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 `scripts/check_required_checks.py`.
 
 **The required-checks audit exits 0 on the org.** On 2026-10-08, with the
-DUPLICATE rule of .github#16:
+DUPLICATE rule of .github#16 and .github#18:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
@@ -272,10 +272,20 @@ count. A filter it cannot settle, it refuses with exit 2. Restoring kindkit's
 old `on: [push, pull_request]` in a `--save` snapshot of the org gives two
 DUPLICATE findings, `check` and `kind / conformance`.
 
-**What it still does not see: a producer in another workflow.** The rule reads
-one workflow's own `push` trigger. A required context produced on
-`pull_request` by one workflow and on `push` by a different workflow with a
-job of the same name is not flagged. That is .github#18, open.
+**It also sees a producer in another workflow** (.github#18). A required
+context produced on `pull_request` by one workflow, and on `push` to some other
+branch by a job of the same context in a different active workflow, is also a
+DUPLICATE, and the finding names both workflows. The `push` side uses the same
+filter evaluation and refusals, and expands a called workflow into its
+`<caller> / <called>` contexts. A `push` job there whose context it cannot
+resolve (a matrix, an expression or block name, or a call it cannot read) is
+refused, exit 2. The issue's reproduction, a `push.yml` with
+`on: push` and a job `check` added to kindkit in a `--save` snapshot, gives one
+DUPLICATE for `check`.
+
+**What it still does not see: two `pull_request` producers.** Two workflows
+that both run a job of the same name on `pull_request` also give a required
+context two suites. Nothing flags that yet.
 
 #### Security settings, org-wide
 
@@ -664,6 +674,10 @@ and these two had, at ten against twelve:
   `kind / conformance` ran twice on a pull request head, once from a bare
   `push` and once from `pull_request`, because it read only the
   `pull_request` trigger (.github#16; on kindkit#25's head `79d194a`)
+- the same audit, with that fixed, still reporting 0 findings when the second
+  producer was a `push` job of the same name in a different workflow, because
+  it read only each workflow's own `push` (.github#18; reproduced with `--load`
+  on a `--save` snapshot with a `push.yml` added to kindkit)
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)
