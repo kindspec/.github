@@ -66,7 +66,11 @@ MUTANTS = [
         "skip = _skippable(job_id, jobs, required, calls)",
         "skip = None if cid else _skippable(job_id, jobs, required, calls)",
     ),
-    ("called job conditions ignored", "if cid and not skip:", "if False:"),
+    (
+        "called job conditions ignored",
+        "                    elif cid:\n",
+        "                    elif False:\n",
+    ),
     ("nested call accepted", "            if nested:\n", "            if False:\n"),
     (
         "unread called job accepted",
@@ -97,6 +101,34 @@ MUTANTS = [
         "needed caller's called conditions ignored",
         "            why = why or _skippable(cid, inner, required, {})\n",
         "            pass\n",
+    ),
+    (
+        "call looked up without its ref",
+        '        text = (data.get("called") or {}).get(uses)\n',
+        (
+            '        text = next((v for k, v in (data.get("called") or {}).items()'
+            ' if k.split("@")[0] == uses.split("@")[0]), None)\n'
+        ),
+    ),
+    (
+        "path filter ignored for called jobs",
+        "                    if filtered:\n",
+        "                    if filtered and not cid:\n",
+    ),
+    (
+        "types ignored for called jobs",
+        "                    if types:\n",
+        "                    if types and not cid:\n",
+    ),
+    (
+        "called jobs not counted",
+        '                    stats["pr_jobs"] += 1\n                    produced.add(context)\n',
+        '                    stats["pr_jobs"] += 0\n                    produced.add(context)\n',
+    ),
+    (
+        "uses with runs-on or steps accepted",
+        '        if "uses" in job and {"runs-on", "steps"} & set(job):\n',
+        "        if False:\n",
     ),
     ("expression name accepted", 'elif "${{" in context:', "elif False:"),
     ("other app accepted", "if app not in (None, ACTIONS_APP_ID):", "if False:"),

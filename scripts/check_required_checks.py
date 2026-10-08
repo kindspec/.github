@@ -15,7 +15,9 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                so it does not report on every pull request head
   CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
                success: it has a job-level `if:`, or something in its `needs:`
-               chain has one or is not itself required
+               chain has one or is not itself required. When the skipped job calls
+               a reusable workflow, its '<caller> / <called>' contexts never
+               report at all, and the merge waits on them instead
   PATH-FILTER  a required job is path-filtered, so it never reports on an
                unrelated pull request and blocks it forever (AGENTS.md 3.2)
   STALE-ALLOW  an ALLOW entry matches no job any more
@@ -25,7 +27,8 @@ repositories read; an API or authentication failure; fewer repositories listed
 than the org reports, or a private count this token cannot read; a repository
 whose rules or workflow states cannot be read (rulesets on a private repository
 need a paid plan); a workflow the parser cannot read or GitHub would reject
-(a job with neither runs-on nor uses, a non-mapping job); or a matrix,
+(a job with neither runs-on nor uses, or uses with runs-on or steps, a
+non-mapping job); or a matrix,
 expression- or block-named job whose context names this script does not expand.
 A run that could not look must not report a pass.
 
@@ -267,6 +270,8 @@ def jobs_of(workflow):
             raise Unsupported(f"job '{job_id}' is not a mapping: {job!r}")
         if "runs-on" not in job and "uses" not in job:
             raise Unsupported(f"job '{job_id}' has neither runs-on nor uses; GitHub rejects it")
+        if "uses" in job and {"runs-on", "steps"} & set(job):
+            raise Unsupported(f"job '{job_id}' has uses with runs-on or steps; GitHub rejects it")
         context = str(job.get("name", job_id))
         unresolved = None
         if isinstance(job.get("strategy"), dict) and "matrix" in job["strategy"]:
@@ -430,13 +435,15 @@ def evaluate(snapshot, allow):
                             "omit opened or synchronize"
                         )
                     skip = _skippable(job_id, jobs, required, calls)
-                    if cid and not skip:
+                    effect = "can be skipped, which reports success"
+                    if cid and skip:
+                        # GitHub reports the skipped caller under its own name; the
+                        # '<caller> / <called>' context never appears at all.
+                        effect = "is never reported when its caller is skipped, so the merge waits"
+                    elif cid:
                         skip = _skippable(cid, inner, required, {})
                     if skip:
-                        findings.append(
-                            f"CONDITIONAL  {unit} is required but can be skipped, which "
-                            f"reports success: {skip}"
-                        )
+                        findings.append(f"CONDITIONAL  {unit} is required but {effect}: {skip}")
         for context, app in sorted(required.items()):
             if app not in (None, ACTIONS_APP_ID):
                 incomplete.append(
@@ -656,6 +663,7 @@ def selftest():
 
     # reusable workflows: kindkit's kind.yml, called locally and by a pinned ref
     local, remote = "./.github/workflows/k.yml", "kindspec/kindkit/.github/workflows/kind.yml@abc1"
+    remote2 = remote.replace("@abc1", "@def2")
     kind = [{"context": "kind / conformance", "integration_id": ACTIONS_APP_ID}]
 
     def caller(uses, more=""):
@@ -836,6 +844,48 @@ def selftest():
         (
             "unrecognised uses is not passed",
             repo(caller("o/r/ci/x.yml@v1"), kind, called={"o/r/ci/x.yml@v1": conf}),
+            inc2,
+            None,
+        ),
+        (
+            "each call is read at its own ref",
+            repo(
+                caller(remote) + f"  kind2:\n    uses: {remote2}\n",
+                kind + [{"context": "kind2 / conformance"}],
+                called={remote: conf, remote2: conf.replace("conformance:", "conform:")},
+            ),
+            ["UNGATED", "ORPHANED"],
+            None,
+        ),
+        (
+            "path-filtered caller",
+            repo(
+                f"on:\n  pull_request:\n    paths: ['a/**']\njobs:\n  kind:\n    uses: {remote}\n",
+                kind,
+                called={remote: conf},
+            ),
+            ["PATH-FILTER"],
+            None,
+        ),
+        (
+            "caller on types: [labeled]",
+            repo(
+                f"on:\n  pull_request:\n    types: [labeled]\njobs:\n  kind:\n    uses: {remote}\n",
+                kind,
+                called={remote: conf},
+            ),
+            ["TRIGGER"],
+            None,
+        ),
+        (
+            "uses with runs-on is refused",
+            repo(caller(remote, "    runs-on: x\n"), kind, called={remote: conf}),
+            inc2,
+            None,
+        ),
+        (
+            "uses with steps is refused",
+            repo(caller(remote, "    steps:\n      - run: x\n"), kind, called={remote: conf}),
             inc2,
             None,
         ),
@@ -1101,6 +1151,16 @@ def selftest():
         want_code = 1 if set(want) - {"INCOMPLETE"} else 2 if want else 0  # not via exit_code
         report(label, got, code, want, want_code)
 
+    # the summary counts each called job, not its caller, alongside plain jobs
+    snap = repo(
+        _PR.format(job="check") + caller(remote).split("jobs:\n")[1],
+        _CHECK + kind + [{"context": "kind / b"}],
+        called={remote: conf + "  b:\n    runs-on: x\n"},
+    )
+    f, inc, stats = evaluate(snap, {})
+    got = [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc) + ["?"] * (stats["pr_jobs"] != 3)
+    report(f"3 pull_request jobs counted ({stats['pr_jobs']})", got, exit_code(f, inc), [], 0)
+
     # collection: failures exit 2, never 1 and never a crash
     pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
     priv = {"name": "q", "default_branch": "main", "archived": False, "private": True}
@@ -1247,7 +1307,7 @@ def selftest():
             report(label, ["INCOMPLETE"] * len(inc) + f, exit_code(f, inc), ["INCOMPLETE"], 2)
     finally:
         GH = saved
-    total = len(cases) + len(collection) + 4
+    total = len(cases) + len(collection) + 5
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 
