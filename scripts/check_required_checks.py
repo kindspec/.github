@@ -26,12 +26,24 @@ than the org reports, or a private count this token cannot read; a repository
 whose rules or workflow states cannot be read (rulesets on a private repository
 need a paid plan); a workflow the parser cannot read or GitHub would reject
 (a job with neither runs-on nor uses, a non-mapping job); or a matrix,
-reusable-workflow, expression- or block-named job whose context names this
-script does not expand. A run that could not look must not report a pass.
+expression- or block-named job whose context names this script does not expand.
+A run that could not look must not report a pass.
+
+A job that calls a reusable workflow (`uses: ./.github/workflows/F.yml`, or
+`uses: OWNER/REPO/.github/workflows/F.yml@REF`) produces one context per called
+job, '<caller job> / <called job>', each named by its `name:` or else its id.
+The caller's triggers, `if:` and `needs:` gate all of them; each called job's
+own `if:` and `needs:` gate it too. A local call is read from the same
+default-branch snapshot as the caller; any other is fetched at exactly REF and
+kept in the snapshot under "called". Not evaluated (exit 2): a call that
+cannot be fetched or is not in the snapshot, any other `uses:` form, a called
+workflow with no workflow_call trigger or that cannot be parsed, and a called
+job that itself calls a workflow or is matrix-, expression- or block-named.
 
 Reads every repository in the org that the caller can see, through the `gh`
-CLI: workflow files on the default branch, the rules that apply to that branch
-(GET /repos/{o}/{r}/rules/branches/{b}) and classic branch protection.
+CLI: workflow files on the default branch, the workflows their jobs call, the
+rules that apply to that branch (GET /repos/{o}/{r}/rules/branches/{b}) and
+classic branch protection.
 --public-only skips private repositories and says how many it skipped, or that
 it cannot tell when the token cannot see the org's private count.
 
@@ -47,6 +59,7 @@ import json
 import re
 import subprocess
 import sys
+import urllib.parse
 
 # Jobs that run on pull requests but deliberately gate nothing, as
 # (repo, workflow path, job id): reason. Jobs that never run on a pull request
@@ -211,8 +224,7 @@ def _branch_runs(config, branch):
     return runs
 
 
-def pr_trigger(workflow, branch):
-    """(how the workflow reaches a PR into branch, path-filtered, restricted types, why not)."""
+def _events(workflow):
     if not isinstance(workflow, dict):
         raise Unsupported(f"workflow is not a mapping: {type(workflow).__name__}")
     on = workflow.get("on")
@@ -222,6 +234,12 @@ def pr_trigger(workflow, branch):
         on = {e: None for e in on}
     if not isinstance(on, dict):
         raise Unsupported(f"unreadable 'on': {on!r}")
+    return on
+
+
+def pr_trigger(workflow, branch):
+    """(how the workflow reaches a PR into branch, path-filtered, restricted types, why not)."""
+    on = _events(workflow)
     if "pull_request" in on:
         config = on["pull_request"]
         if _branch_runs(config, branch):
@@ -240,7 +258,7 @@ def pr_trigger(workflow, branch):
 
 
 def jobs_of(workflow):
-    """Yield (job id, context, if, needs, unresolved reason)."""
+    """Yield (job id, context, if, needs, unresolved reason, uses)."""
     jobs = workflow.get("jobs")
     if not isinstance(jobs, dict):
         raise Unsupported(f"'jobs' is not a mapping: {jobs!r}")
@@ -251,9 +269,7 @@ def jobs_of(workflow):
             raise Unsupported(f"job '{job_id}' has neither runs-on nor uses; GitHub rejects it")
         context = str(job.get("name", job_id))
         unresolved = None
-        if "uses" in job:
-            unresolved = "calls a reusable workflow; contexts are '<caller> / <called job>'"
-        elif isinstance(job.get("strategy"), dict) and "matrix" in job["strategy"]:
+        if isinstance(job.get("strategy"), dict) and "matrix" in job["strategy"]:
             unresolved = "matrix job; contexts are expanded per combination"
         elif "${{" in context:
             unresolved = "name is an expression"
@@ -261,10 +277,49 @@ def jobs_of(workflow):
             unresolved = "name is a block scalar"
         needs = job.get("needs") or []
         needs = needs if isinstance(needs, list) else [needs]
-        yield job_id, context, "if" in job, [str(n) for n in needs], unresolved
+        uses = str(job["uses"]) if "uses" in job else None
+        yield job_id, context, "if" in job, [str(n) for n in needs], unresolved, uses
 
 
-def _skippable(job_id, jobs, required, seen=frozenset()):
+# A called workflow's jobs report as '<caller job> / <called job>', each named by
+# its `name:` or else its id. One level deep: a called job that itself calls a
+# workflow is refused.
+LOCAL_CALL = re.compile(r"\./(\.github/workflows/[^/@]+\.ya?ml)\Z")
+REMOTE_CALL = re.compile(r"([\w.-]+)/([\w.-]+)/(\.github/workflows/[^/@]+\.ya?ml)@([^\s@]+)\Z")
+
+
+def expand(context, uses, data):
+    """({called job id: job tuple named '<context> / <called>'}, None), or (None, why not)."""
+    m = LOCAL_CALL.match(uses)
+    if m:
+        text = data["workflows"].get(m.group(1))
+        if text is None:
+            return None, f"calls {uses}, which is not among this repository's workflows"
+    elif REMOTE_CALL.match(uses):
+        text = (data.get("called") or {}).get(uses)
+        if text is None:
+            return None, f"calls {uses}, which the snapshot does not hold"
+        if not isinstance(text, str):
+            return None, f"calls {uses}, which could not be read: {text.get('unreadable')}"
+    else:
+        return None, f"calls {uses!r}, which is not a workflow reference this script reads"
+    try:
+        workflow = parse_yaml(text)
+        if "workflow_call" not in _events(workflow):
+            return None, f"calls {uses}, which has no workflow_call trigger"
+        called = {}
+        for cid, cname, has_if, needs, unresolved, nested in jobs_of(workflow):
+            if nested:
+                return None, f"calls {uses}, whose job '{cid}' calls another workflow"
+            if unresolved:
+                return None, f"calls {uses}, whose job '{cid}' is not read: {unresolved}"
+            called[cid] = (cid, f"{context} / {cname}", has_if, needs, None, None)
+    except Unsupported as e:
+        return None, f"calls {uses}, which cannot be read: {e}"
+    return called, None
+
+
+def _skippable(job_id, jobs, required, calls, seen=frozenset()):
     """Why job_id can be skipped on a pull request, or None."""
     if jobs[job_id][2]:
         return "job-level if:"
@@ -275,9 +330,13 @@ def _skippable(job_id, jobs, required, seen=frozenset()):
             continue
         if jobs[n][4]:
             return f"needs '{n}', which was not evaluated"
-        if jobs[n][1] not in required:
+        inner = calls.get(n, {})
+        contexts = [c[1] for c in inner.values()] if n in calls else [jobs[n][1]]
+        if any(c not in required for c in contexts):
             return f"needs '{n}', which is not required: if it fails, this job is skipped"
-        why = _skippable(n, jobs, required, seen | {job_id})
+        why = _skippable(n, jobs, required, calls, seen | {job_id})
+        for cid in inner:
+            why = why or _skippable(cid, inner, required, {})
         if why:
             return f"needs '{n}' ({why})"
     return None
@@ -325,39 +384,59 @@ def evaluate(snapshot, allow):
                     if why:
                         elsewhere.setdefault(context, why)
                 continue
-            for job_id, context, _, _, unresolved in jobs.values():
-                stats["pr_jobs"] += 1
+            calls = {}
+            for job_id, job in jobs.items():
+                if job[5] and not job[4]:
+                    called, unresolved = expand(job[1], job[5], data)
+                    if unresolved:
+                        jobs[job_id] = (*job[:4], unresolved, job[5])
+                    else:
+                        calls[job_id] = called
+            for job_id, context, _, _, unresolved, _ in jobs.values():
                 where = f"{repo}: {path}: job '{job_id}'"
                 if (repo, path, job_id) in allow:
+                    stats["pr_jobs"] += 1
                     used.add((repo, path, job_id))
                     continue
                 if unresolved:
+                    stats["pr_jobs"] += 1
                     incomplete.append(f"{where}: not evaluated: {unresolved}")
                     blind = True
                     continue
-                produced.add(context)
-                if context not in required:
-                    findings.append(
-                        f"UNGATED      {where} runs on pull requests; "
-                        f"'{context}' is not a required check"
-                    )
-                    continue
-                if filtered:
-                    findings.append(
-                        f"PATH-FILTER  {where} is required but its pull_request "
-                        "trigger is path-filtered"
-                    )
-                if types:
-                    findings.append(
-                        f"TRIGGER      {where} is required but pull_request types {types} "
-                        "omit opened or synchronize"
-                    )
-                skip = _skippable(job_id, jobs, required)
-                if skip:
-                    findings.append(
-                        f"CONDITIONAL  {where} is required but can be skipped, which "
-                        f"reports success: {skip}"
-                    )
+                if job_id in calls:
+                    units = [
+                        (f"{where} (called job '{cid}')", c[1], cid, calls[job_id])
+                        for cid, c in calls[job_id].items()
+                    ]
+                else:
+                    units = [(where, context, None, None)]
+                for unit, context, cid, inner in units:
+                    stats["pr_jobs"] += 1
+                    produced.add(context)
+                    if context not in required:
+                        findings.append(
+                            f"UNGATED      {unit} runs on pull requests; "
+                            f"'{context}' is not a required check"
+                        )
+                        continue
+                    if filtered:
+                        findings.append(
+                            f"PATH-FILTER  {unit} is required but its pull_request "
+                            "trigger is path-filtered"
+                        )
+                    if types:
+                        findings.append(
+                            f"TRIGGER      {unit} is required but pull_request types {types} "
+                            "omit opened or synchronize"
+                        )
+                    skip = _skippable(job_id, jobs, required, calls)
+                    if cid and not skip:
+                        skip = _skippable(cid, inner, required, {})
+                    if skip:
+                        findings.append(
+                            f"CONDITIONAL  {unit} is required but can be skipped, which "
+                            f"reports success: {skip}"
+                        )
         for context, app in sorted(required.items()):
             if app not in (None, ACTIONS_APP_ID):
                 incomplete.append(
@@ -442,6 +521,9 @@ def collect(org, public_only=False, api=gh):
                 if entry["type"] == "file" and entry["name"].endswith((".yml", ".yaml")):
                     blob = api(f"repos/{org}/{name}/contents/{entry['path']}?ref={branch}")
                     workflows[entry["path"]] = base64.b64decode(blob["content"]).decode()
+            called = {}
+            for uses in sorted({u for text in workflows.values() for u in _remote_calls(text)}):
+                called[uses] = _fetch_call(uses, api)
             runs = api(f"repos/{org}/{name}/actions/workflows?per_page=100")
             if not isinstance(runs, dict):
                 raise Unreadable("cannot read workflow states")
@@ -464,8 +546,36 @@ def collect(org, public_only=False, api=gh):
             "required": required,
             "default_branch": branch,
             "workflow_state": state,
+            "called": called,
         }
     return snapshot, skipped
+
+
+def _remote_calls(text):
+    """The other-repository workflows a workflow's jobs call; evaluate refuses what this skips."""
+    try:
+        jobs = parse_yaml(text).get("jobs")
+    except (Unsupported, AttributeError):
+        return []
+    if not isinstance(jobs, dict):
+        return []
+    return [
+        j["uses"]
+        for j in jobs.values()
+        if isinstance(j, dict) and isinstance(j.get("uses"), str) and REMOTE_CALL.match(j["uses"])
+    ]
+
+
+def _fetch_call(uses, api):
+    """The called workflow's text at exactly the ref in `uses`, or {'unreadable': why}."""
+    owner, repo, path, ref = REMOTE_CALL.match(uses).groups()
+    try:
+        blob = api(f"repos/{owner}/{repo}/contents/{path}?ref={urllib.parse.quote(ref, safe='')}")
+    except Unreadable as e:
+        return {"unreadable": str(e)}
+    if not isinstance(blob, dict) or "content" not in blob:
+        return {"unreadable": f"no file {path} in {owner}/{repo} at {ref}"}
+    return base64.b64decode(blob["content"]).decode()
 
 
 def run_live(org, public_only, save=None):
@@ -491,8 +601,12 @@ def _on(trigger):
 
 
 def _fake_api(responses):
+    """A key holding '?' answers only that exact path, query included."""
+
     def api(path):
         base = path.split("?")[0]
+        if "?" in path and path in responses:
+            base = path
         keys = [k for k in responses if k == base] or sorted(
             (k for k in responses if base.startswith(k)), key=len, reverse=True
         )
@@ -512,21 +626,23 @@ def selftest():
             return [f"CRASH {type(e).__name__}"], -1
         return [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc), exit_code(f, inc)
 
-    def repo(wf, required=_CHECK, more=None, state="active"):
+    def repo(wf, required=_CHECK, more=None, state="active", called=None):
         workflows = {"w.yml": wf, **(more or {})}
         states = {path: state for path in workflows}
-        return {
-            "r": {
-                "workflows": workflows,
-                "required": required,
-                "default_branch": "main",
-                "workflow_state": states,
-            }
+        data = {
+            "workflows": workflows,
+            "required": required,
+            "default_branch": "main",
+            "workflow_state": states,
         }
+        if called is not None:
+            data["called"] = called
+        return {"r": data}
 
     def live(responses, public_only=False):
         try:
             snap, skipped = collect("o", public_only, api=_fake_api(responses))
+            snap = json.loads(json.dumps(snap))  # what --save writes is what --load reads
         except Unreadable as e:
             return ["INCOMPLETE"], 2, str(e)
         except Exception as e:  # noqa: BLE001
@@ -537,6 +653,193 @@ def selftest():
     tags = "on:\n  push:\n    tags: ['v*']\njobs:\n  gate:\n    runs-on: x\n    steps:\n      - run: |\n          x\n"
     extra = "  extra:\n    runs-on: x\n"
     inc2 = ["INCOMPLETE", "INCOMPLETE"]
+
+    # reusable workflows: kindkit's kind.yml, called locally and by a pinned ref
+    local, remote = "./.github/workflows/k.yml", "kindspec/kindkit/.github/workflows/kind.yml@abc1"
+    kind = [{"context": "kind / conformance", "integration_id": ACTIONS_APP_ID}]
+
+    def caller(uses, more=""):
+        return f"on: [push, pull_request]\njobs:\n  kind:\n{more}    uses: {uses}\n"
+
+    def called(jobs):
+        return "on:\n  workflow_call:\n    inputs:\n      x:\n        type: string\njobs:\n" + jobs
+
+    conf = called("  conformance:\n    runs-on: x\n")
+    needs_kind = _PR.format(job="check") + "    needs: kind\n" + caller(remote).split("jobs:\n")[1]
+    reusable = [
+        (
+            "local reusable workflow expands to '<caller> / <called>'",
+            repo(caller(local), kind, more={".github/workflows/k.yml": conf}),
+            [],
+            None,
+        ),
+        (
+            "remote reusable workflow expands from the snapshot",
+            repo(caller(remote), kind, called={remote: conf}),
+            [],
+            None,
+        ),
+        (
+            "caller and called names make the context",
+            repo(
+                caller(remote, "    name: K\n"),
+                [{"context": "K / C"}],
+                called={remote: called("  c:\n    name: C\n    runs-on: x\n")},
+            ),
+            [],
+            None,
+        ),
+        (
+            "unrequired called job",
+            repo(caller(remote), kind, called={remote: conf + extra}),
+            ["UNGATED"],
+            None,
+        ),
+        (
+            "required context no called job produces",
+            repo(caller(remote), kind + [{"context": "kind / gone"}], called={remote: conf}),
+            ["ORPHANED"],
+            None,
+        ),
+        (
+            "called job with an if:",
+            repo(caller(remote), kind, called={remote: conf + "    if: false\n"}),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "caller job with an if:",
+            repo(caller(remote, "    if: false\n"), kind, called={remote: conf}),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "called job needs an unrequired called job",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: conf + "    needs: b\n  b:\n    runs-on: x\n"},
+            ),
+            ["UNGATED", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs a caller whose called jobs are all required is clean",
+            repo(needs_kind, _CHECK + kind, called={remote: conf}),
+            [],
+            None,
+        ),
+        (
+            "needs a caller with an unrequired called job",
+            repo(needs_kind, _CHECK + kind, called={remote: conf + extra}),
+            ["UNGATED", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "needs a caller whose called job has an if:",
+            repo(needs_kind, _CHECK + kind, called={remote: conf + "    if: false\n"}),
+            ["CONDITIONAL", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "remote call missing from the snapshot is not passed",
+            repo(caller(remote), kind, called={}),
+            inc2,
+            None,
+        ),
+        (
+            "snapshot without called workflows is not passed",
+            repo(caller(remote), kind),
+            inc2,
+            None,
+        ),
+        (
+            "unreadable called workflow is not passed",
+            repo(caller(remote), kind, called={remote: {"unreadable": "HTTP 404"}}),
+            inc2,
+            None,
+        ),
+        (
+            "missing local called workflow is not passed",
+            repo(caller(local), kind),
+            inc2,
+            None,
+        ),
+        (
+            "nested reusable workflow is not passed",
+            repo(
+                caller(remote),
+                kind,
+                called={
+                    remote: called("  conformance:\n    uses: o/r/.github/workflows/x.yml@v1\n")
+                },
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "called job with an expression name is not passed",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: called("  c:\n    name: ${{ inputs.x }}\n    runs-on: x\n")},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "called matrix job is not passed",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: conf + "    strategy:\n      matrix:\n        v: [1, 2]\n"},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "called block-scalar name is not passed",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: called("  c:\n    name: >-\n      conformance\n    runs-on: x\n")},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "called workflow without workflow_call is not passed",
+            repo(
+                caller(remote),
+                kind,
+                called={remote: "on: [push]\njobs:\n  conformance:\n    runs-on: x\n"},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "unparseable called workflow is not passed",
+            repo(caller(remote), kind, called={remote: conf + "      stray: y\n"}),
+            inc2,
+            None,
+        ),
+        (
+            "caller matrix is not passed",
+            repo(
+                caller(remote, "    strategy:\n      matrix:\n        v: [1]\n"),
+                kind,
+                called={remote: conf},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "unrecognised uses is not passed",
+            repo(caller("o/r/ci/x.yml@v1"), kind, called={"o/r/ci/x.yml@v1": conf}),
+            inc2,
+            None,
+        ),
+    ]
     cases = [
         ("clean", repo(_PR.format(job="check")), [], None),
         ("named job is clean", repo(_PR.format(job="j") + "    name: check\n"), [], None),
@@ -782,6 +1085,7 @@ def selftest():
             ["INCOMPLETE", "INCOMPLETE"],
             None,
         ),
+        *reusable,
     ]
     bad = 0
 
@@ -812,6 +1116,23 @@ def selftest():
             "repos/o/p/rules/": [],
         }
         return {**base, **more}
+
+    def blob(text):
+        return {"content": base64.b64encode(text.encode()).decode()}
+
+    kind_at = "repos/kindspec/kindkit/contents/.github/workflows/kind.yml"
+    calls = {
+        "repos/o/p/contents/.github/workflows": [
+            {"type": "file", "name": "c.yml", "path": ".github/workflows/c.yml"}
+        ],
+        "repos/o/p/contents/.github/workflows/c.yml": blob(caller(remote)),
+        "repos/o/p/actions/workflows": {
+            "workflows": [{"path": ".github/workflows/c.yml", "state": "active"}]
+        },
+        "repos/o/p/rules/": [
+            {"type": "required_status_checks", "parameters": {"required_status_checks": kind}}
+        ],
+    }
 
     collection = [
         ("unknown org", {"orgs/o/repos": None}, False, ["INCOMPLETE"], 2),
@@ -872,6 +1193,27 @@ def selftest():
             False,
             [],
             0,
+        ),
+        (
+            "called workflow is read at the ref it is pinned to",
+            org([pub], private=0, **calls, **{f"{kind_at}?ref=abc1": blob(conf)}),
+            False,
+            [],
+            0,
+        ),
+        (
+            "called workflow absent at its ref is not passed",
+            org([pub], private=0, **calls, **{f"{kind_at}?ref=main": blob(conf)}),
+            False,
+            inc2,
+            2,
+        ),
+        (
+            "called workflow that cannot be fetched is not passed",
+            org([pub], private=0, **calls, **{f"{kind_at}?ref=abc1": forbidden}),
+            False,
+            inc2,
+            2,
         ),
     ]
     for label, responses, public_only, want, want_code in collection:
