@@ -305,6 +305,20 @@ MUTANTS = [
         "                if i == len(pattern):\n",
         "                if False:\n",
     ),
+    ("generic x/x dropped", '["x", "x/x", "X",', '["x", "X",'),
+    ("generic x/{branch} dropped", ', f"x/{branch}"]', "]"),
+    (
+        "** samples lack a slash",
+        '(".*", ["", "x", "x/x"], False, False)',
+        '(".*", ["", "x"], False, False)',
+    ),
+    (
+        "* never sampled empty",
+        '("[^/]*", ["", "x"], False, False)',
+        '("[^/]*", ["x"], False, False)',
+    ),
+    ("negated branches-ignore accepted", 'if any(p.startswith("!") for p in ignore):', "if False:"),
+    ("empty branches accepted", "    if not patterns:\n", "    if False:\n"),
 ]
 
 

@@ -275,7 +275,7 @@ DUPLICATE findings, `check` and `kind / conformance`.
 **What it still does not see: a producer in another workflow.** The rule reads
 one workflow's own `push` trigger. A required context produced on
 `pull_request` by one workflow and on `push` by a different workflow with a
-job of the same name is not flagged.
+job of the same name is not flagged. That is .github#18, open.
 
 #### Security settings, org-wide
 

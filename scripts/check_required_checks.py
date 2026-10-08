@@ -215,6 +215,10 @@ def _pattern(pattern):
     `*` is any run without '/', `**` any run, `?` zero or one and `+` one or more of
     the preceding character, `[...]` one character from a set of letters, digits
     and ranges among them, and backslash escapes. Anything else is refused.
+
+    Matching is case-sensitive; GitHub does not document whether its own is. A
+    pattern with many `**` and no match, such as `a**a**...a**b`, backtracks for
+    tens of seconds at around twenty; the audit job's timeout bounds that.
     """
     atoms, i = [], 0  # (regex, samples, finite, a character ? or + may follow)
     while i < len(pattern):
@@ -277,6 +281,8 @@ def _patterns(config, key):
 
 
 def _branch_name(name):
+    # Only empty segments are ruled out. Other names git refuses, such as
+    # 'main.lock' or 'x..y', still count as witnesses: this errs toward a finding.
     return bool(name) and "//" not in f"/{name}/"
 
 
@@ -300,6 +306,9 @@ def push_duplicates(on, branch):
     others = ["x", "x/x", "X", "0", "x-x", "x.x", "x_x", f"{branch}x", f"x/{branch}"]
     if "branches-ignore" in config:
         ignore = _patterns(config, "branches-ignore")
+        if any(p.startswith("!") for p in ignore):
+            # GitHub documents '!' for branches, not for branches-ignore
+            raise Unsupported(f"push branches-ignore {ignore}: a negated pattern")
         if any(re.fullmatch(r"\**\*\*\**", p) for p in ignore):
             return None  # a pattern of only stars, '**' among them, ignores every branch
         regexes = [_pattern(p)[0] for p in ignore]
@@ -311,6 +320,8 @@ def push_duplicates(on, branch):
         return None  # tags only
     filters, settled = [], True
     patterns = _patterns(config, "branches")
+    if not patterns:
+        raise Unsupported("push branches: [] is not documented to mean anything")
     for n, p in enumerate(patterns):
         negated = p.startswith("!")
         regex, samples, finite = _pattern(p[1:] if negated else p)
@@ -1119,8 +1130,24 @@ def selftest():
             branches("x", "x/**", key="branches-ignore"),
             dup,
         ),
+        # each witness source must be tried: the generic names, and each pattern's samples
+        ("push: only x/x is left", branches("*", "*/main", key="branches-ignore"), dup),
+        ("push: only x/main is left", branches("*", "*/x", key="branches-ignore"), dup),
+        ("push: only a '**' sample with a '/' is left", branches("a**", "!a*"), dup),
+        ("push: only a '*' sampled empty is left", branches("ab*", "!abx"), dup),
         # cannot be decided this way: refused, never passed
         ("push: branches: ['*', '!*'] is refused", branches("*", "!*"), inc1),
+        (
+            "push: '!' in branches-ignore is refused",
+            branches("**", "!feature/**", key="branches-ignore"),
+            inc1,
+        ),
+        ("push: branches: [] is refused", pushed("  push:\n    branches: []\n"), inc1),
+        (
+            "push: branches-ignore: [] ignores nothing",
+            pushed("  push:\n    branches-ignore: []\n"),
+            dup,
+        ),
         ("push: branches: ['!**', '*', '!*'] is refused", branches("!**", "*", "!*"), inc1),
         ("push: branches: ['mai+n', '!maiin'] is refused", branches("mai+n", "!maiin"), inc1),
         (
