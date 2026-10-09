@@ -234,7 +234,9 @@ changed, Arm 0 commit `c5ddbe6`, no scoring-arm commit and no
 not merged.** Merging it is timed: its squash commit is the scoring-arm
 commit, and the first UTC day after that commit's committer date is the
 tierer's start day (pre-registration 2 §7.3). `tier-model` must run on that
-day, or every exporting cell is NO VERDICT, and it and `tier-run` need the
+day, or every exporting cell is NO VERDICT (enforced by the harness:
+`spike/harness/p2/tierrun.py` refuses any other day, and `aggregate.py` turns
+untiered cells into NO VERDICT), and it and `tier-run` need the
 owner's API credentials. So it merges only when the owner can run the tierer
 the next UTC day. Per that pull request's `LOG.md` §25, which is on its branch
 and not on `main`: §6.2's strict rule leaves **0** `site-policy` merge cases,
@@ -295,8 +297,7 @@ source and the pins §3 records. A fresh machine has to clone them; see §3 belo
 A stub and a pointer at the org contract. No specification, no suite, no
 implementation, nothing committed for the spike yet. Two pre-registrations for
 its existential spike are drafted and reviewed, and await the owner's
-approval: one over Mermaid flowcharts, which runs first, and a canvas census
-after it. Under §2's owner decisions neither is committed before it is
+approval. Under §2's owner decisions neither is committed before it is
 approved. Its brief names three concrete `.canvas` referential-integrity
 holes — an override for a deleted node, an edge
 to a renamed node, and two branches adding different nodes with the same name —
@@ -497,7 +498,7 @@ In order:
    day, `tier-run`, and `aggregate`, which gives the verdict. Both tiering steps
    need the owner's API credentials.
 2. **nodespec's existential spike — the owner's approval of the two drafted
-   pre-registrations**, Mermaid flowcharts first and the canvas census after.
+   pre-registrations**.
    Nothing is committed or run before approval. Its brief argues the rowspec
    thesis does not transfer to canvases at all, and that a finding of "do not
    build this" is a legitimate outcome there too.
