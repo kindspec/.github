@@ -1,6 +1,6 @@
 # State of play
 
-Current as of **2026-10-08 (UTC)**. Read `AGENTS.md` first — it is the
+Current as of **2026-10-09 (UTC)**. Read `AGENTS.md` first — it is the
 contract. This file is where the work actually stands, what comes next, and the
 traps that have already cost time.
 
@@ -11,17 +11,17 @@ reproduced from this checkout alone, that is said.
 
 ## 1. Where each repository stands
 
-### rowspec — v0.2.0 released; `main` is past it, and a release is being prepared
+### rowspec — v0.3.0 released to PyPI
 
     410 conformance cases          find conformance/cases -name expect.json | wc -l
     0 failures, reference impl     just conform
     0 failures, second impl        just conform-alt
     73 killed, 0 survived          just mutants
     2 equivalent, 0 stale, 0 broken
-    73 passed, 1 skipped           just test   (skip is openpyxl absent)
+    77 passed, 1 skipped           just test   (skip is openpyxl absent)
     296 files clean                just check
 
-**All of these reproduce on 2026-10-08 at `ed0844b`**, in a fresh clone,
+**All of these reproduce on 2026-10-09 at `ce24fa9`**, in a fresh clone,
 through `just`, with kindkit at the pinned `8e21b55`. They were measured with a
 private uv cache (`UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy`, §4), and
 `git status` was clean after every recipe, `just mutants` included. A sandboxed
@@ -41,9 +41,15 @@ no longer applies.
 
 **rowspec's mutation gate is safe to kill; kindkit's is not.** rowspec writes
 its mutants to `conformance/mutant_impl.py`, which is gitignored, and never edits
-`reference/rowspec/table.py`, so an interrupted `just mutants` leaves the tree
-clean. That is the gate only: **an interrupted `just test` can leave an
-untracked `conformance/_vacuous.py`**, which `tests/test_conformance.py` writes
+`reference/rowspec/table.py`, so an interrupted `just mutants` leaves no tracked
+file changed. Since rowspec#82 the gate holds an exclusive `flock` on
+`conformance/.mutants.lock` for the whole run, so a second gate in the same
+tree waits rather than sharing the scratch file (rowspec#81). A
+`mutant_impl.py` that exists while the lock is held can only be a killed run's
+leftover: the gate refuses it with exit 2 and names it, and `git status` does
+not show it, because it is ignored. Delete it and rerun. That is the gate
+only: **an interrupted `just test` can leave an untracked
+`conformance/_vacuous.py`**, which `tests/test_conformance.py` writes
 and removes in a `finally`, and which is not gitignored (`git check-ignore -v
 conformance/_vacuous.py` prints nothing). Delete it if `git status` shows it.
 **kindkit's gate is the opposite**: `tools/mutation_gate.py` mutates tracked
@@ -67,9 +73,26 @@ producer (rowspec#67). `release.yml` runs on `v*` tags, and
 `action-published.yml` only when called by it or dispatched by hand. Every
 action is pinned to a commit, and a test keeps it so (rowspec#71).
 
-**Landed since v0.2.0**, all on `main` (`gh api
-repos/kindspec/rowspec/compare/v0.2.0...main --jq .ahead_by` prints 19). These
-are highlights; `CHANGELOG.md` `[Unreleased]` is authoritative.
+**0.3.0 is released.** The tag `v0.3.0` peels to `4b703f0`, rowspec#80's merge
+commit (`git ls-remote --tags https://github.com/kindspec/rowspec`). Release
+run 37720073278, on that tag, has `gate`, `build`, `publish` and
+`published-action / default-install` all `success` (`gh api
+repos/kindspec/rowspec/actions/runs/37720073278/jobs --jq
+'.jobs[]|"\(.name) \(.conclusion)"'`). So the published action's default
+install path has now run after a real release, not only on throwaway branches.
+`curl -s https://pypi.org/pypi/rowspec/json` gives version `0.3.0`, extra
+`xlsx`. **There is no GitHub Release object for `v0.3.0`**: `gh release list
+-R kindspec/rowspec` still shows `v0.2.0` as Latest. `release.yml` does not
+create one; `v0.1.0`'s and `v0.2.0`'s were created from the owner's account
+(`gh api repos/kindspec/rowspec/releases/tags/<tag> --jq .author.login`).
+
+What `main` has beyond the tag: `gh api
+repos/kindspec/rowspec/compare/v0.3.0...main --jq '.commits[].commit.message'`.
+On 2026-10-09 that is rowspec#82 only, the gate lock above.
+
+**What 0.3.0 shipped**, the commits between `v0.2.0` and `v0.3.0` (`gh api
+repos/kindspec/rowspec/compare/v0.2.0...v0.3.0 --jq .ahead_by`). These are
+highlights; `CHANGELOG.md` `[0.3.0]` is authoritative.
 
 - **The probe.** The mutation probe calls `kindkit.probe_command` and reads the
   runner's `--report-json` verdict rather than parsing its printed summary
@@ -83,8 +106,7 @@ are highlights; `CHANGELOG.md` `[Unreleased]` is authoritative.
   `just test-xlsx` (rowspec#70).
 - **The action's default install path.** `action-published.yml` runs the action
   exactly as a consumer does, after each release's `publish`, and by hand
-  (rowspec#72). It has run only on throwaway branches so far, never after a
-  real release.
+  (rowspec#72).
 - **Removed.** `corpus_check.py` is gone: it never opened a `.mdtbl` file, so
   it could not fail (rowspec#68).
 - **Licensing.** SPDX headers, per-directory `LICENSE` files, and
@@ -99,10 +121,11 @@ are highlights; `CHANGELOG.md` `[Unreleased]` is authoritative.
   then to `8e21b55` (rowspec#77), then the adoption of kindkit's workflow above
   (rowspec#78).
 
-**A release of these is being prepared, as 0.3.0 (rowspec#80, open). Tagging
-needs the owner's approval first**, because a `v*` tag is what publishes to PyPI. Until then, `v0.2.0` is the release to point at
-(`gh release list -R kindspec/rowspec`; `curl -s
-https://pypi.org/pypi/rowspec/json` gives version `0.2.0` and extra `xlsx`).
+**Open issues are all deferred or blocked**, none a release blocker (`gh
+issue list -R kindspec/rowspec --state open`): the xlsx export's next stage
+(rowspec#35, #36, labelled `blocked`, `ROADMAP.md` "Next"); the sdist's
+undeclarable dependency (rowspec#47, waiting on kindkit's publication); and the
+two deferred spec-shape questions in §2 (rowspec#61, #63).
 
 The suite, the mutation gate and the case-tree convention come from kindkit,
 pinned by commit in `pyproject.toml` (`grep 'kindkit @' pyproject.toml`). What
@@ -119,10 +142,10 @@ three questions where the two disagreed.
     28 files clean                                     just check
     6 case(s) in its own kv tree                       just cases
 
-All of these reproduce on 2026-10-08 at `8e21b55`, through `just` in a fresh
-clone with a private uv cache. To count tests, read pytest's own summary line;
-a `grep` for `def test_` miscounts here, because parametrised tests collect as
-several.
+All of these reproduce on 2026-10-09 at `6ebd80d`, through `just` in a fresh
+clone with a private uv cache, `node` on `PATH`. To count tests, read
+pytest's own summary line; a `grep` for `def test_` miscounts here, because
+parametrised tests collect as several.
 
 **`v0.1.0` is older than `main`.** The tag peels to `bf716e3`
 (`git ls-remote --tags https://github.com/kindspec/kindkit`), and `main` is
@@ -133,7 +156,7 @@ tag, which is why rowspec pins `8e21b55` by commit. kindkit is not on PyPI
 (`curl -s -o /dev/null -w '%{http_code}' https://pypi.org/pypi/kindkit/json`
 prints 404).
 
-**Landed in kindkit#13 to kindkit#24**, all on `main`:
+**Landed in kindkit#13 to kindkit#26**, all on `main`:
 
 - **git runs with the caller's configuration stripped** (kindkit#13), and a
   failed git call raises instead of being read as a verdict (kindkit#21).
@@ -157,6 +180,10 @@ prints 404).
   ran exactly the case directories under it. The check name, `<calling job> /
   conformance`, is an interface. kindkit calls it on its own toy tree, and
   rowspec calls it at `8e21b55`. This was kindkit#4, the last v0 item.
+- **README and CI** (kindkit#25, #26). The README records that rowspec calls
+  the reusable workflow, and `check.yml` runs on `push` to `main` only, plus
+  `pull_request`, so each required check has one producer (the `.github`
+  section below has the detail).
 
 Three pieces besides the workflow: the tree-driven runner, the case-tree
 convention under CC0, and the mutation gate a kind runs against its own
@@ -166,14 +193,56 @@ only evidence that the abstraction is real rather than fitted.
 **The gate is Python-only** — `tokenize`, `ast`, `compile`. A kind whose
 reference implementation is not Python gets the runner and not the gate.
 
-### blockspec — pre-registration 2 binding, harness in review, no arm run
+### blockspec — pre-registration 2 validated, Arm 0 run, scoring arms in review, no verdict
 
+    reverify: PASS                      bash spike/harness/prereg2_reverify.sh
     SELECTION-GUARD SELFTEST: PASS      python3 spike/harness/prose_merge.py --selftest-selection
     SELFTEST: PASS                      python3 spike/harness/check_control_gate.py --selftest
     PLANTED-CASE GATE: PASS             python3 spike/harness/prose_merge.py --plant --d8-dir <research>/experiments/D8-identity
 
-Verified green on 2026-10-08 at `f59c109`, in a fresh clone. The harness is
-**pure stdlib, run with `python3` directly** — no `uv`, no justfile.
+Verified green on 2026-10-09 at `c5ddbe6`, in a fresh clone of `main`, with
+research at `d02c196` for `--d8-dir`. The harness is **pure stdlib, run with
+`python3` directly** — no `uv`, no justfile.
+
+**Pre-registration 2's harness and the first two of its §9 commits are on
+`main`**, each a squash merge:
+
+- **The harness**, blockspec#16, merged as `0dd32dd`. Its subject line ends
+  "(do not merge)": the pull request's stale title, carried into the squash
+  commit (§4). The title has since been corrected; the published history is
+  not rewritten. `LOG.md` §23 records both.
+- **The validation commit**, blockspec#17, `d79bf2e`: the one commit that adds
+  `spike/results/prereg2/VALIDATION`, which holds the sealed manifest's
+  `manifest_sha256`, beginning `11e50913` (`cat
+  spike/results/prereg2/VALIDATION`). Every bound run names it.
+- **Arm 0**, blockspec#18, `c5ddbe6`. It ran once per arm, bound, on all
+  seven arms, and **every arm passes the 10% twin-share bar** (§6.5). The
+  largest share under the verdict rule is `k8s-l10n`, 2,220 of 112,397
+  distinct natural-language contents, 1.98%; `LOG.md` §24 tabulates all
+  seven. From the committed outputs:
+
+      python3 -I -c "import json,glob; [print(f, r['nl_twin_same_file'], r['nl_distinct_ge20'], r['passes_bar']) for f in sorted(glob.glob('spike/results/prereg2/arm0/*.json')) for r in [json.load(open(f))['rules']['yaml-fence']]]"
+
+`spike/harness/prereg2_reverify.sh`, the review step each §9 pull request
+ends with, re-derives those commits from history alone. In the fresh clone
+above it prints `PASS` on every line: validation commit `d79bf2e`, nothing
+later touching the harness or the frozen documents, `VALIDATION` never
+changed, Arm 0 commit `c5ddbe6`, no scoring-arm commit and no
+`tier-model.json` yet; then `reverify: PASS`, exit 0.
+
+**The scoring arms and the export are in an open pull request, blockspec#19,
+not merged.** Merging it is timed: its squash commit is the scoring-arm
+commit, and the first UTC day after that commit's committer date is the
+tierer's start day (pre-registration 2 §7.3). `tier-model` must run on that
+day, or every exporting cell is NO VERDICT, and it and `tier-run` need the
+owner's API credentials. So it merges only when the owner can run the tierer
+the next UTC day. Per that pull request's `LOG.md` §25, which is on its branch
+and not on `main`: §6.2's strict rule leaves **0** `site-policy` merge cases,
+where the first registration expected 21, and the rule's count stands, so
+`site-policy` M has no unit in its verdict cell.
+
+**No verdict.** Verdicts come from `aggregate`, after the export and the
+tiering.
 
 **`spike/PRE-REGISTRATION-2.md` is merged (blockspec#15) and binding for
 blockspec#2. The owner approved it on 2026-10-07, before it merged** (the
@@ -181,20 +250,14 @@ merge is at 2026-10-07T23:28:22Z: `gh api repos/kindspec/blockspec/pulls/15
 --jq .merged_at`). It supersedes
 `PRE-REGISTRATION.md`, which stays unchanged as the record. Its §0 lists the
 twenty choices the approval covers, each with its alternative. **Its own header
-still reads "Status: DRAFT, for owner approval", and `spike/LOG.md` §13 still
-says it is not binding until approved.** Both were written before the approval,
-so read them as stale.
+still reads "Status: DRAFT, for owner approval"**, and `spike/LOG.md` §13 says
+it is not binding until approved. Both were written before the approval, so
+read them as stale; `LOG.md` §17 records that it is binding.
 
 **The cheap measurement has landed** (blockspec#14). It ran research's D8
 anchor and uniqueness harnesses on the §5.1 corpora, with output in
 `spike/results/cheap-arm/` and the log in `LOG.md` §12. It decides nothing by
 itself; it is input to pre-registration 2.
-
-**The harness for pre-registration 2 is in review on a draft pull request**
-(blockspec#16, "do not merge"). Under that document's §9, the harness at its
-validation commit is the implementation, and that commit does not exist yet.
-**No arm has run** — not Arm 0, E, S or M (§6.5), nor the R mechanism, the
-exporter or the tierer.
 
 **The first run's 85 merge-arm records are not tiered.** That is
 pre-registration 2 §0 item 17, approved, and it reverses item 3 of the previous
@@ -227,11 +290,15 @@ cannot read a corpus (research#11).
 **The corpora are not in the repository.** `CORPORA.md` names each one with its
 source and the pins §3 records. A fresh machine has to clone them; see §3 below.
 
-### nodespec — stub, zero work
+### nodespec — stub; two pre-registrations drafted, awaiting owner approval
 
 A stub and a pointer at the org contract. No specification, no suite, no
-implementation. Its brief names three concrete
-`.canvas` referential-integrity holes — an override for a deleted node, an edge
+implementation, nothing committed for the spike yet. Two pre-registrations for
+its existential spike are drafted and reviewed, and await the owner's
+approval: one over Mermaid flowcharts, which runs first, and a canvas census
+after it. Under §2's owner decisions neither is committed before it is
+approved. Its brief names three concrete `.canvas` referential-integrity
+holes — an override for a deleted node, an edge
 to a renamed node, and two branches adding different nodes with the same name —
 and calls the third the most likely home of a genuine silent-wrong merge.
 
@@ -240,19 +307,32 @@ and calls the third the most likely home of a genuine silent-wrong merge.
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 0 on the org.** On 2026-10-08, with the
-DUPLICATE rule of .github#16, .github#18 and .github#20:
+**The required-checks audit exits 0 on the org.** On 2026-10-09, at
+`89672a6`, with the DUPLICATE rule of .github#16, .github#18 and .github#20:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
     6 repositories, 7 workflows, 7 pull request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+
+**It runs daily, and the first scheduled run is green.**
+`.github/workflows/required-checks-audit.yml` (.github#12) runs the line above
+on cron `17 6 * * *` and by hand. Its first scheduled run, 37784299027, ran
+at `89672a6` and succeeded (`gh api
+"repos/kindspec/.github/actions/workflows/required-checks-audit.yml/runs"
+--jq '.workflow_runs[]|"\(.id) \(.event) \(.conclusion) \(.created_at)"'`).
+It started about seven hours after its slot (§4). .github#3, that nothing
+noticed a repository gaining CI that gates no merge, is closed. The workflow
+runs the audit only: the script's self-test and its mutation sweep
+(`python3 -I scripts/check_required_checks.py --selftest`;
+`scripts/sweep_check_required_checks.py`) run in no CI, so run both by hand
+when changing the script.
 
 .github#15 taught the script to expand a job that calls a reusable workflow
 into one `<caller> / <called job>` context per called job. A call into another
 repository is read at exactly its pinned ref and kept in the `--save`
 snapshot, so kindkit's and rowspec's `kind` jobs now match their required
 `kind / conformance`. It still refuses, exit 2, a call it cannot fetch and a
-called workflow that itself calls one. .github#12 runs the audit daily.
+called workflow that itself calls one.
 
 **One producer per required check, in kindkit too.** kindkit#26 moved
 kindkit's `check.yml` to `push` on `main` only, plus `pull_request`, as
@@ -333,7 +413,10 @@ code only if it checks that out.
 `deployment` and `deployment_status` as events whose checks count; the audit
 reads none of them as a producer, for DUPLICATE or anything else. Two jobs of
 one workflow with the same context (`name: check` on two job ids) are not
-flagged either. `evaluate` returns no finding for each.
+flagged either. `evaluate` returns no finding for each. .github#22 tracks
+these, at low priority: on 2026-10-09 no kindspec workflow runs on those
+events or repeats a context within one workflow (read from each repository's
+`.github/workflows/`).
 
 #### Security settings, org-wide
 
@@ -349,18 +432,21 @@ not been observed on a new repository. A never-issued `ghp_` token is *accepted*
 orgs/kindspec --jq .two_factor_requirement_enabled` prints `true`). That is read
 back from configuration.
 
-**rowspec's `pypi` environment deploys only from `v*` tags** (rowspec#55; `gh
-api repos/kindspec/rowspec/environments/pypi/deployment-branch-policies`). That
-is read back from configuration; no refusal has been observed yet, which is why
-the issue is open.
+**rowspec's `pypi` environment deploys only from `v*` tags, and has been
+watched refusing.** Its only deployment policy is `tag v*` (`gh api
+repos/kindspec/rowspec/environments/pypi/deployment-branch-policies`). Release
+run 37720734896, a `workflow_dispatch` on `main` at the same `4b703f0` the
+tag points to, passed `gate` and `build` and failed `publish` with "Branch
+"main" is not allowed to deploy to pypi due to environment protection rules"
+(`gh api repos/kindspec/rowspec/check-runs/<publish job id>/annotations`).
+rowspec#55 is closed on that.
 
-**Re-checked on 2026-10-08**, by reading configuration back:
+**Re-checked on 2026-10-09**, by reading configuration back:
 `security_and_analysis` shows secret scanning and push protection `enabled` on
 all six repositories; `gh api orgs/kindspec` shows two-factor required and both
-new-repository defaults `true`; and the `pypi` environment's only deployment
-policy is `tag v*`. Nothing above changed. **Required checks did change** on
-rowspec and kindkit, each gaining `kind / conformance`; `AGENTS.md` §3.1 has the
-table.
+new-repository defaults `true`; and the required checks and `strict` flags
+(`gh api repos/kindspec/<repo>/rules/branches/main`) match `AGENTS.md` §3.1's
+table. Nothing above changed.
 
 ---
 
@@ -382,8 +468,9 @@ the owner **before** it is committed.
 - **blockspec#2 runs under `spike/PRE-REGISTRATION-2.md`**, merged and approved
   (§1). Nothing in its §0 is open; to change a choice now means superseding
   again, not editing.
-- **nodespec gets its own pre-registered spike**, once blockspec#2 is set up. It
-  does not wait for blockspec to resolve.
+- **nodespec gets its own pre-registered spike.** It does not wait for
+  blockspec to resolve. Two pre-registrations are drafted and await approval
+  (§1).
 - **A fresh agent behind an information barrier satisfies both independence
   rules**: the suite-author rule (`AGENTS.md` §2.1) and blind judgement under a
   pre-registration. The barrier is an exported directory holding only the
@@ -400,38 +487,43 @@ the owner **before** it is committed.
   rowspec).
 - **kindkit goes to PyPI once its contracts have a second consumer.** It is
   tagged `v0.1.0` and not published (§1).
-- **A rowspec release is tagged only with the owner's approval** (§1).
+- **A rowspec release is tagged only with the owner's approval**, because a
+  `v*` tag is what publishes to PyPI (§1).
 
 In order:
 
-1. **blockspec#2 — review the pre-registration 2 harness (blockspec#16).** Then
-   come the validation commit its §9 binds, and the arms in the order the
-   document sets, Arm 0 first. Nothing runs before the validation commit.
-2. **nodespec's existential spike — draft its pre-registration**, once
-   blockspec#2 is set up. The owner approves the draft before
-   commit. Its brief argues the rowspec thesis does not transfer to canvases at
-   all, and that a finding of "do not build this" is a legitimate outcome there
-   too.
-3. **rowspec 0.3.0** (rowspec#80), once the owner approves tagging (§1).
-4. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
+1. **blockspec#2 — merge the scoring arms (blockspec#19) on a day the owner
+   can run the tierer the next UTC day** (§1). Then `tier-model` on the start
+   day, `tier-run`, and `aggregate`, which gives the verdict. Both tiering steps
+   need the owner's API credentials.
+2. **nodespec's existential spike — the owner's approval of the two drafted
+   pre-registrations**, Mermaid flowcharts first and the canvas census after.
+   Nothing is committed or run before approval. Its brief argues the rowspec
+   thesis does not transfer to canvases at all, and that a finding of "do not
+   build this" is a legitimate outcome there too.
+3. **blockspec#3 and #4 — the adjudications.** djot versus markdown, and what a
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
    into the repository with its reversal cost.
-5. **blockspec#5 — author the case tree before any implementation exists.** The
+4. **blockspec#5 — author the case tree before any implementation exists.** The
    §0 decision, and the one discipline rowspec had to retrofit.
+5. **.github#22 — the producers the audit does not read yet.** Low priority
+   while no kindspec workflow has one (§1).
 
 Open issues carry acceptance criteria and a red-before-green requirement. List
 them per repository rather than trusting a count written here:
 
     gh issue list -R kindspec/<repo> --state open --limit 200
 
-Only some gate defects carry a `gate` label, so read the titles too. Closed
-since the last version of this file:
+Only some gate defects carry a `gate` label, so read the titles too. Issues
+closed on or after 2026-10-08 (`gh issue list -R kindspec/<repo> --state
+closed --search 'closed:>=2026-10-08'`):
 
-- kindkit: every issue it had open — kindkit#3, #4, #9, #10, #11, #15 and
-  #17 (`gh issue list -R kindspec/kindkit --state open` prints nothing);
-- rowspec: rowspec#39, #40, #42, #43, #48, #49, #52, #56 and #59;
-- research: research#4, #6 and #15.
+- rowspec: rowspec#39, #42, #43, #48, #49, #52, #55, #56, #59 and #81;
+- kindkit: kindkit#3 and #4, its last open ones (`gh issue list -R
+  kindspec/kindkit --state open` prints nothing);
+- research: research#15, its last open one;
+- .github: .github#1, #3, #16, #18 and #20.
 
 ---
 
@@ -443,7 +535,7 @@ since the last version of this file:
 dependency of every conformance suite, because the central claim is about what
 stock git does.
 
-**The three blockspec commands run from `blockspec/`**, and `uv sync` needs
+**The blockspec commands run from `blockspec/`**, and `uv sync` needs
 network reach to `github.com` — `rowspec/pyproject.toml` has `kindkit` as a git
 dependency in its dev group, so an offline sync fails there.
 
@@ -572,6 +664,30 @@ committed artifact is the check that discriminates; it took two commands.
 `squash_merge_commit_message = PR_BODY`, so the PR description becomes the commit
 and anything recorded only in a commit message is destroyed on merge. Put what
 must survive in a file or in the PR body.
+
+**The squash commit's subject is the pull request's title**
+(`squash_merge_commit_title = PR_TITLE` on all six: `gh api
+repos/kindspec/<repo> --jq .squash_merge_commit_title`). A title written for
+the review stage lands on `main` as it stands, and no force-push can take it
+back: blockspec's `0dd32dd` is a merged harness whose subject still ends "(do
+not merge)". **Read the title, and update it, before merging.**
+
+**A GitHub scheduled workflow can run hours after its cron slot.** The daily
+audit's cron is `17 6 * * *`; its first scheduled run, 37784299027, was
+created at 13:26 UTC, about seven hours late (`gh api
+"repos/kindspec/.github/actions/workflows/required-checks-audit.yml/runs"
+--jq '.workflow_runs[]|"\(.event) \(.created_at)"'`), and the 2026-10-09
+slot had produced no run by 11:35 UTC, with the workflow `active`. An absent
+scheduled run is not evidence that the workflow is broken or disabled until
+well past its slot; read the run list and the workflow's `state`, and dispatch it by hand if
+the answer is needed now.
+
+**Never stop a process you did not start.** Some runs here cannot be repeated.
+Pre-registration 2's harness marks an arm executed once it opens the corpus,
+and a killed bound run still uses that arm up (`spike/harness/p2/binding.py`,
+its docstring). Its seven scoring runs ran from 2026-10-08T17:13Z to
+2026-10-09T11:20Z (`LOG.md` §25, on blockspec#19's branch). A background job
+that looks idle or stuck may be one of them. Ask whoever started it.
 
 **A stacked pull request whose base was squash-merged will not update cleanly.**
 The squash commit on `main` holds the base branch's changes under a new hash,
@@ -735,6 +851,20 @@ and these two had, at ten against twelve:
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)
+- the audit's `push` DUPLICATE rule, before merge, reporting 0 findings for
+  `branches-ignore: ['**', '!feature/**']`, because its ignore-everything
+  shortcut returned before the negation was read, and for `push: branches:
+  []`; both are now refused, exit 2 (.github#17 review, at `f111068`)
+- the audit's pull request DUPLICATE rule, before merge, exiting 0 when `ALLOW`
+  named the first producer, because the pairs depended on `ALLOW` (.github#21
+  review, H1)
+- the same change, one round later, letting `ALLOW` accept a TARGET-ONLY
+  required job by skipping every check on that job, so its DUPLICATE,
+  CONDITIONAL, TRIGGER and PATH-FILTER findings were never evaluated
+  (.github#21 second review)
+- the audit on `main` reading `types: []` as no `types` filter at all, because
+  an empty list is false, and reporting nothing for a trigger GitHub does not
+  document (.github#21; its self-test grafted onto `main` gives `got [] exit 0`)
 
 The pattern is not about tables, and it is why `AGENTS.md` §2.2 is mechanical
 rather than advisory: break the thing a check checks, watch it go red, put it
