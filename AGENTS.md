@@ -102,15 +102,16 @@ rewritten or the branch deleted, and only squash merges are allowed.
                 passes-on-a-good-tree, fails-on-a-broken-total,
                 kind / conformance
     kindkit     check, kind / conformance                                  yes
-    blockspec   none — no workflows of its own yet                         n/a
+    blockspec   conformance                                                yes
     nodespec    none — no workflows of its own yet                         n/a
     research    none — no workflows of its own yet                         n/a
     .github     none — its one workflow never runs on a pull request       n/a
 
 **"Strict" — branch must be up to date with `main` before merging — applies only
-to `rowspec` and `kindkit`.** It is a parameter *of* the required-checks rule, so
-a repository with no required checks has no up-to-date requirement either. Say
-"two of six", not "all", and add it when those repositories gain workflows.
+to `rowspec`, `kindkit` and `blockspec`.** It is a parameter *of* the
+required-checks rule, so a repository with no required checks has no up-to-date
+requirement either. Say "three of six", not "all", and add it when the others
+gain workflows.
 
 **CodeQL runs on every repository** through GitHub's default setup, and is
 deliberately **not** required. Its check names are generated from language
@@ -227,7 +228,7 @@ there, as these rule suites:
 
 While the log still holds them, `gh api
 repos/kindspec/<repo>/rulesets/rule-suites/<id>` shows each one. The other three — `research`, `kindkit` and `blockspec` — carry the same
-rules (plus `kindkit`'s required check) but have **no recorded rejection**, so
+rules (plus `kindkit`'s and `blockspec`'s required checks) but have **no recorded rejection**, so
 by this section's own standard they are configured, not verified. A ruleset
 that is correct but has never been exercised is exactly the distinction this
 section exists to refuse; do not report it as verified until a rejection is on

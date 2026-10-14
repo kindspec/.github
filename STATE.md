@@ -195,6 +195,13 @@ reference implementation is not Python gets the runner and not the gate.
 
 ### blockspec — pre-registration 2 validated, Arm 0 run, scoring arms in review, no verdict
 
+**The conformance case tree is on `main`** (blockspec#36, merged
+2026-10-14 as `926d7a1`, closing blockspec#5): `conformance/cases/`, written
+before any implementation exists. CI's `conformance` job
+(`.github/workflows/conformance.yml`) validates the tree and checks that the
+runner stub reports no verdict without an implementation. It is a required,
+strict check on `main` (ruleset 22723622). There is still no implementation.
+
     reverify: PASS                      bash spike/harness/prereg2_reverify.sh
     SELECTION-GUARD SELFTEST: PASS      python3 spike/harness/prose_merge.py --selftest-selection
     SELFTEST: PASS                      python3 spike/harness/check_control_gate.py --selftest
@@ -314,6 +321,11 @@ and calls the third the most likely home of a genuine silent-wrong merge.
     $ python3 -I scripts/check_required_checks.py --public-only
     1 private repositories skipped (--public-only)
     6 repositories, 7 workflows, 7 pull request jobs, 7 required checks: 0 finding(s), 0 not evaluated
+
+Re-run on 2026-10-14, after blockspec gained its `conformance` workflow and
+that check was required on its `main` (ruleset 22723622, strict), at `e0e131f`:
+
+    6 repositories, 8 workflows, 8 pull request jobs, 8 required checks: 0 finding(s), 0 not evaluated
 
 **It runs daily, and the first scheduled run is green.**
 `.github/workflows/required-checks-audit.yml` (.github#12) runs the line above
@@ -506,8 +518,9 @@ In order:
    block is. Both are non-empirical, so §4 of the contract applies: two
    independent arguments from the same evidence, and the adjudication written
    into the repository with its reversal cost.
-4. **blockspec#5 — author the case tree before any implementation exists.** The
-   §0 decision, and the one discipline rowspec had to retrofit.
+4. **blockspec#5 — author the case tree before any implementation exists.**
+   Done: blockspec#36, merged 2026-10-14. The implementation is next, by an
+   author who did not write the tree (contract §2.1).
 5. **.github#22 — the producers the audit does not read yet.** Low priority
    while no kindspec workflow has one (§1).
 
