@@ -11,7 +11,7 @@ reproduced from this checkout alone, that is said.
 
 ## 1. Where each repository stands
 
-### rowspec — v0.3.0 released to PyPI; `main` 27 commits ahead of it
+### rowspec — v0.3.0 released to PyPI; `main` 28 commits ahead of it
 
     483 conformance cases          find conformance/cases -name expect.json | wc -l
     85 CSV-profile cases           find conformance/cases-csv -name expect.json | wc -l
@@ -22,12 +22,12 @@ reproduced from this checkout alone, that is said.
     2 equivalent, 0 stale, 0 broken
     33 killed, 0 survived          just mutants-csv
     2 equivalent, 0 stale, 0 broken
-    408 passed, 2 skipped          just test   (both skips are openpyxl absent)
+    418 passed, 2 skipped          just test   (both skips are openpyxl absent)
     20 passed                      just test-xlsx
     1 passed                       just test-libreoffice   (soffice on PATH)
-    449 files clean                just check
+    450 files clean                just check
 
-**All of these reproduce on 2026-10-15 at `c8e96fa`** (rowspec#138's merge),
+**All of these reproduce on 2026-10-15 at `40e5647`** (rowspec#139's merge),
 in a fresh clone, through `just`, with kindkit at the pinned `8e21b55`
 (`grep 'kindkit @' pyproject.toml`). They were measured with a private uv
 cache (`UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy`, §4), and `git status
@@ -45,7 +45,7 @@ directly instead; the equivalents:
     ./.venv/bin/ruff format --check . && ./.venv/bin/ruff check .
 
 **What `main` has beyond `v0.3.0`** (`gh api
-repos/kindspec/rowspec/compare/v0.3.0...main --jq '.ahead_by'` prints 27;
+repos/kindspec/rowspec/compare/v0.3.0...main --jq '.ahead_by'` prints 28;
 `--jq '.commits[].commit.message|split("\n")[0]'` lists them).
 `CHANGELOG.md` `[Unreleased]` is authoritative; the highlights:
 
@@ -89,10 +89,13 @@ repos/kindspec/rowspec/compare/v0.3.0...main --jq '.ahead_by'` prints 27;
     one chosen by a fixed ranking, never by row position (rowspec#125, ruling
     on #115); `delta(c)` carries this row's error when both rows give one
     (rowspec#124, ruling on #116);
-  - `prior()` over stored text is `#REF!(c)` (rowspec#128, closing #114); a
-    stored cell spelled like `#REF!` is text (rowspec#129, closing #126);
+  - `prior()` over stored text is `#REF!(c)` (rowspec#128, closing #114; the
+    same change stopped trimming U+00A0 from an order column, and #136 was
+    closed on it); a stored cell spelled like `#REF!` is text (rowspec#129,
+    closing #126); a computed cell holding only a Unicode space is refused
+    (rowspec#139, closing #137);
   - two disagreements between the reference and `rowspec_alt` settled
-    (rowspec#106); cases for all of the above (rowspec#119, closing #100 and
+    (rowspec#106); cases for the above (rowspec#119, closing #100 and
     #102; rowspec#138) and mutants (rowspec#120).
 
 **CI.** `check.yml` has three jobs. `conformance` runs `just check`,
@@ -103,9 +106,9 @@ workflow at `8e21b55` and reports as **`kind / conformance`**: the case tree
 against kindkit's convention, the suite, the second implementation and the
 mutation gate. `action-selftest.yml` supplies `passes-on-a-good-tree` and
 `fails-on-a-broken-total`. Both workflows run on `push` to `main` only, plus
-`pull_request` (`grep -n -A3 '^on:' .github/workflows/*.yml`). On `c8e96fa`
+`pull_request` (`grep -n -A3 '^on:' .github/workflows/*.yml`). On `40e5647`
 every check run is `success` (`gh api
-repos/kindspec/rowspec/commits/c8e96fa/check-runs --jq
+repos/kindspec/rowspec/commits/40e5647/check-runs --jq
 '.check_runs[]|"\(.name) \(.conclusion)"'`). `release.yml` runs on `v*`
 tags.
 
@@ -128,7 +131,7 @@ and rerun. **An interrupted `just test` can leave an untracked
 removes in a `finally`, and which is not gitignored. Delete it if `git status`
 shows it.
 
-**Open issues: 20** (`gh issue list -R kindspec/rowspec --state open --limit
+**Open issues: 22** (`gh issue list -R kindspec/rowspec --state open --limit
 200`):
 
 - the reference against the spec, filed 2026-10-14/15: rowspec#112 (`#REF!`
@@ -140,23 +143,27 @@ shows it.
   column), #133 (a self-reference through `delta`, `prior` or `cumulative` not
   treated as a cycle), #134 (a group aggregate or a later row-relative column
   read as blank in `prior`, `delta` and `cumulative`), #135 (`#REF!(cycle)`
-  for a group aggregate over a `prior` column), #136 (U+00A0 trimmed from an
-  order column) and #137 (a computed cell holding only U+00A0 accepted);
+  for a group aggregate over a `prior` column), #143 (U+00A0 trimmed around
+  table lines, header cells and declarations) and #144 (a table line broken
+  on VT, FF, NEL, U+2028 and other non-LF line breaks);
 - spec: rowspec#140 (state `prior` over text and the empty key value
-  directly);
+  directly) and #142 (`delta` in the first row when that row's value is an
+  error);
 - identifiers: rowspec#99 (seven §9 identifiers never asserted alone by a
   parse case), #101 (`rowspec check` does not print the identifier) and #103
   (the CSV profile has no identifiers);
 - CSV: rowspec#93 (the unterminated-quote scan triples check time on large
-  files);
+  files) and #145 (CSV mode trims U+00A0 from key, order and typed column
+  values);
 - xlsx export: rowspec#35 (filtered and group aggregates, labelled
   `blocked`), #83 and #88 (spreadsheet arithmetic disagreeing with `rowspec
   eval`), #89 (a mode that writes `rowspec eval`'s values);
 - packaging: rowspec#47 (the sdist cannot declare kindkit, waiting on its
   publication).
 
-**One open pull request**, rowspec#139, for #137 (`gh pr list -R
-kindspec/rowspec --state open`); its checks are green and it is not merged.
+**One open pull request**, rowspec#141, which would close #112, #113 and
+#132–#135 by evaluating every computed column over one dependency graph (`gh
+pr list -R kindspec/rowspec --state open`; its `closingIssuesReferences`).
 
 The suite, the mutation gate and the case-tree convention come from kindkit,
 pinned by commit. What stayed in rowspec is everything kindkit cannot be told.
@@ -209,7 +216,7 @@ binds is pre-registration 3's run 2, **FOUND** (`spike/LOG.md` §35):
     spike/results/prereg3/verdict.json        INCONCLUSIVE {'NO VERDICT': 52, 'NOT FOUND': 4}
     spike/results/prereg3/run2/verdict.json   FOUND {'NO VERDICT': 16, 'FOUND': 35, 'NOT FOUND': 5}
 
-- **Pre-registration 2** (blockspec#19 to #28): its tiering was void, because
+- **Pre-registration 2** (blockspec#15 to #19, #26 to #28): its tiering was void, because
   the planted packets were answered wrongly, so every exporting cell is NO
   VERDICT and the verdict is INCONCLUSIVE (`LOG.md` §31).
 - **Pre-registration 3** (`spike/PRE-REGISTRATION-3.md`, blockspec#22 to
@@ -226,15 +233,22 @@ binds is pre-registration 3's run 2, **FOUND** (`spike/LOG.md` §35):
   unchanged apart from the run cap, the binding run and the aggregate's output
   path; `spike/harness3/` and the pre-registration are byte-identical.
 - **Run 2** tiered all 488 packets, every plant answered as expected, and all
-  13 new reproductions were byte-identical. 432 qualifying distinct units, 171
-  of them on an oracle DELETED target, which `ORACLE.md` §4 marks as weaker
+  13 new reproductions were byte-identical. Summed over the 35 FOUND cells,
+  the cells' qualifying distinct units come to 432, 171 of them on an oracle
+  DELETED target, which `ORACLE.md` §4 marks as weaker. Each cell counts its
+  own distinct units, so a unit that qualifies in several cells counts once
+  in each; `verdict.json` holds no unit ids, so the number of distinct units
+  across cells cannot be read from it
   (`python3 -I -c "import json; c=json.load(open('spike/results/prereg3/run2/verdict.json'))['cells'].values(); print(sum(x['qualifying_distinct'] for x in c), sum(x['wrong_on_deleted'] for x in c))"`
   prints `432 171`).
-- **Read it with its noise figures.** 413 of 483 real packets qualify in run 2,
-  far above every rehearsal figure in pre-registration 3 §2.6 (22 of 116, 0 of
-  117, 23 of 117, 139 of 486, all synthetic). §2 says one tiering run is a
-  noisy instrument; the FOUND rests on one run. `LOG.md` §35 sets them side by
-  side.
+- **Read it with its noise figures.** 413 of 483 real packets would qualify
+  in run 2. Pre-registration 3 §2.6's rehearsal figures, all on synthetic
+  packets, are 22 of 116, 0 of 117 and 23 of 117, and 139 of 486 on its own
+  prompt, with q4 agreement in 68 of 119 between two runs; §2.6: "These
+  figures compare runs. They are not accuracy". §2: the plants "do not
+  measure its accuracy on real packets." Run 1's answers for 191 real packets
+  are public and `LOG.md` §35 does not compare them with run 2's. The FOUND
+  rests on one tiering run.
 - **The write-up is the reproduction**, as pre-registration 2 §8 requires:
   `spike/results/prereg3/run2/reproduction.md`, generated from committed
   records by `spike/ruling/reproduction_run2.py`, gives each qualifying
@@ -282,9 +296,11 @@ merge), in a fresh clone with a private uv cache:
   frontmatter readings, for 237 (`git ls-tree -r --name-only <sha>
   conformance/cases | grep -c 'expect.json$'` at `926d7a1` and `ebfc86a`).
 - **The reference** (blockspec#37) is `reference/blockspec/document.py`,
-  standard library only, written against the tree with no case changed; its
-  one change under `conformance/cases/` is the `ambiguous-table` code in the
-  schema.
+  standard library only, written against the tree with no case changed. The
+  `ambiguous-table` code it needed in the schema reached `main` through
+  blockspec#38 (`ebfc86a`), which merged first; #37's squash commit changes
+  nothing under `conformance/cases/` (`git show --stat --format= <sha> --
+  conformance/cases/case-body.schema.json` at `ebfc86a` and `d5355ab`).
 - **Required checks: `conformance` and `reference`, strict**, ruleset 22723622
   (`gh api repos/kindspec/blockspec/rules/branches/main`). `conformance`
   validates the tree with kindkit's validator and checks the runner reports
@@ -400,10 +416,12 @@ from each public repository's `.github/workflows/` on `main`).
   `PR_BODY` on all six; `allow_auto_merge` is `false` on all six.
 
 `AGENTS.md` §3.1's table matches the required checks
-(`gh api repos/kindspec/<repo>/rules/branches/main`). research, kindkit and
-blockspec still have no recorded rule rejection (`gh api
-'repos/kindspec/<repo>/rulesets/rule-suites?rule_suite_result=fail&time_period=month'`
-returns an empty list for each), so they remain configured, not verified.
+(`gh api repos/kindspec/<repo>/rules/branches/main`). Three rulesets have a
+recorded rejection of a push to `main`, each still returned with `result`
+`fail` by `gh api repos/kindspec/<repo>/rulesets/rule-suites/<id>`: `.github`
+4014197203, rowspec 4014189520 and nodespec 4014318589, all on 2026-09-10.
+research, kindkit and blockspec have none on record, so they remain
+configured, not verified.
 
 A push holding a generated AWS key pair was refused with `GH013` on each of the
 six (.github#4, closed). A never-issued `ghp_` token is *accepted* — it is not
@@ -422,7 +440,7 @@ rules". rowspec#55 is closed on that.
 
 ### Owner decisions
 
-Settled, and concerning the public work.
+Settled.
 
 - **blockspec#2's binding verdict is pre-registration 3's run 2, FOUND,** under
   the owner's ruling of 2026-10-14 (`spike/LOG.md` §34). There is no run 3.
@@ -433,11 +451,6 @@ Settled, and concerning the public work.
   `README.md`).
 - **The CSV profile's readings in SPEC.md §13 are decided**, and so are the
   spec rulings of rowspec#110, #115, #116, #117 and #118.
-- **A fresh agent behind an information barrier satisfies both independence
-  rules**: the suite-author rule (`AGENTS.md` §2.1) and blind judgement under a
-  pre-registration. The barrier is an exported directory holding only the
-  permitted files and no `.git` — a `git archive` of the allowed paths, not a
-  worktree. What each was given is logged in the repository it works on.
 - **kindkit goes to PyPI once its contracts have a second consumer.**
   blockspec now consumes the validator, the runner and the gate (§1). It is
   still unpublished; publishing it is the owner's call.
@@ -453,8 +466,8 @@ In order:
 2. **blockspec#2 — close it or say why not.** The verdict is FOUND, the
    write-up is committed and #3–#5 are closed; the issue is open.
 3. **rowspec — the reference defects filed 2026-10-14/15**: rowspec#112,
-   #113, #130–#137, and the spec question rowspec#140. rowspec#139 is open for
-   #137. Each fix needs a case written by someone who did not write the fix
+   #113, #130–#135, #143, #144 and #145, and the spec questions rowspec#140
+   and #142. rowspec#141, open, addresses #112, #113 and #132–#135. Each fix needs a case written by someone who did not write the fix
    (`AGENTS.md` §2.1, §5).
 4. **rowspec — identifiers end to end**: rowspec#99, #101, and #103 for the
    CSV profile.
@@ -475,7 +488,7 @@ Issues closed since 2026-10-09 (`gh issue list -R kindspec/<repo> --state all
 --limit 200 --json number,closedAt`, filtered to `closedAt >= 2026-10-09`):
 
 - rowspec: rowspec#36, #61, #63, #92, #94, #100, #102, #107, #110, #111, #114,
-  #115, #116, #117, #118 and #126;
+  #115, #116, #117, #118, #126, #136 and #137;
 - blockspec: blockspec#3, #4, #5 and #21;
 - kindkit, research, nodespec and .github: none.
 
@@ -502,7 +515,14 @@ through `uv`.
 **`node` is required by kindkit's test suite**, not optionally: the case-tree
 validator translates Python regex semantics to ECMA-262 and the differential test
 checks the translation against a real engine. Without `node` on `PATH` that test
-skips, and a mutation exists specifically so a skip fails the gate. blockspec's
+skips, and a mutation exists specifically so a skip fails the gate.
+
+**kindkit's §1 figures need bytecode writing enabled.** Three of its tests and
+one of its mutants exercise stale `.pyc` handling. With
+`PYTHONDONTWRITEBYTECODE=1` in the environment, `uv run pytest -q` at
+`6ebd80d` gives `3 failed, 217 passed`, and `just mutants` gives `148
+mutations, 147 caught, 1 survived, 0 broken` (measured 2026-10-15). Unset it
+before measuring. blockspec's
 `tools/slugger/ranges.mjs` also needs node, only to regenerate the slug table.
 
 **Corpora.** They live outside the repositories and are gitignored. **Clone the
@@ -618,9 +638,9 @@ first has merged.
 **Strict mode plus several pull requests that touch the same file means serial
 conflicts.** Each merge makes every other open pull request out of date, and
 where they all edit one region, typically `CHANGELOG.md`'s `[Unreleased]`, each
-also conflicts with the one just merged. rowspec merged 26 pull requests on
+also conflicts with the one just merged. rowspec merged 27 pull requests on
 2026-10-14/15 this way (`gh pr list -R kindspec/rowspec --state merged --search
-'merged:>=2026-10-14' --limit 200 --json number --jq length`). Land them one
+'merged:2026-10-14..2026-10-15' --limit 200 --json number --jq length`). Land them one
 at a time, merging `main` and resolving before each, and expect to rerun CI for
 every one.
 
@@ -691,9 +711,12 @@ on every pull request you open.
   rules for one rerun; its run 2 binds, and there is no run 3.
 - **blockspec draft 0's syntax and block model**: adjudications 0001 and 0002,
   with their addenda.
-- **A fresh agent behind an information barrier counts as independent**, for
-  the suite-author rule and for blind judgement under a pre-registration, with
-  what it was given logged (`AGENTS.md` §2.1).
+- **A fresh agent behind an information barrier counts as independent.** For
+  suite authoring, `AGENTS.md` §2.1 says what the barrier is: an exported
+  directory holding only the permitted files and no `.git`, not a worktree.
+  The same standard is used for blind judgement under a pre-registration;
+  that use is a decision recorded here, not in `AGENTS.md`. What each was
+  given is logged in the repository it works on.
 - **Identity per kind.** Opaque row ids for rowspec, no minted ids for prose,
   named rather than positional for nodes. The prose decision rests on
   `research/design-findings/D8-identity.md` §3.3 — 100.0% within-file
