@@ -21,8 +21,8 @@ tables, documents, canvases — are edited by several people over years, and
 version control is where that happens.
 
     rowspec     rows    opaque row ids                  draft 0, released
-    blockspec   blocks  deliberately no minted ids      spike, no verdict
-    nodespec    nodes   named, not positional           not started
+    blockspec   blocks  deliberately no minted ids      draft 0 cases + reference, spike FOUND
+    nodespec    nodes   named, not positional           not started, spike closed
 
 Each kind is named after its **unit of identity**, because identity is the hard
 part of every one of them.
@@ -102,7 +102,7 @@ rewritten or the branch deleted, and only squash merges are allowed.
                 passes-on-a-good-tree, fails-on-a-broken-total,
                 kind / conformance
     kindkit     check, kind / conformance                                  yes
-    blockspec   conformance                                                yes
+    blockspec   conformance, reference                                     yes
     nodespec    none — no workflows of its own yet                         n/a
     research    none — no workflows of its own yet                         n/a
     .github     none — its one workflow never runs on a pull request       n/a

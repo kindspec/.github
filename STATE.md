@@ -296,9 +296,10 @@ merge), in a fresh clone with a private uv cache:
 - **There is no `SPEC.md`** and no second implementation. The tree and the
   adjudications are draft 0's definition.
 
-**Two of blockspec's own documents are behind this.** `README.md` still says
-the spike "has **no verdict**", and `spike/README.md` still says "blockspec
-does not exist and may not come to".
+**Some of blockspec's own documents are behind this on `main`.**
+`README.md` still says the spike "has **no verdict**", and `spike/README.md`
+still says "blockspec does not exist and may not come to". blockspec#39, open,
+updates both, with `AGENTS.md` and `DESIGN-BRIEF.md`.
 
 **`spike/README.md` "Read these before believing anything here"** still
 applies to any spike result: `LOG.md` §9 retracts the claim that the defect
@@ -398,10 +399,9 @@ from each public repository's `.github/workflows/` on `main`).
 - `squash_merge_commit_title` is `PR_TITLE` and `squash_merge_commit_message`
   `PR_BODY` on all six; `allow_auto_merge` is `false` on all six.
 
-**`AGENTS.md` §3.1's table is behind.** It lists blockspec's required checks
-as `conformance` only; `gh api repos/kindspec/blockspec/rules/branches/main`
-shows `conformance, reference`. And research, kindkit and blockspec still have
-no recorded rule rejection (`gh api
+`AGENTS.md` §3.1's table matches the required checks
+(`gh api repos/kindspec/<repo>/rules/branches/main`). research, kindkit and
+blockspec still have no recorded rule rejection (`gh api
 'repos/kindspec/<repo>/rulesets/rule-suites?rule_suite_result=fail&time_period=month'`
 returns an empty list for each), so they remain configured, not verified.
 
@@ -447,10 +447,9 @@ Settled, and concerning the public work.
 
 In order:
 
-1. **Bring the documents that still say "no verdict" into line.** blockspec's
-   `README.md` and `spike/README.md` (§1), and this repository's `AGENTS.md`:
-   §1's table says blockspec is "spike, no verdict" and §3.1's table omits
-   blockspec's `reference` check.
+1. **Land blockspec#39**, which brings blockspec's `README.md`,
+   `spike/README.md`, `AGENTS.md` and `DESIGN-BRIEF.md` into line with the
+   verdict and draft 0 (§1).
 2. **blockspec#2 — close it or say why not.** The verdict is FOUND, the
    write-up is committed and #3–#5 are closed; the issue is open.
 3. **rowspec — the reference defects filed 2026-10-14/15**: rowspec#112,

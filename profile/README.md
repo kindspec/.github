@@ -36,14 +36,17 @@ every one of them.
 | | unit | identity | status |
 |---|---|---|---|
 | **[rowspec](https://github.com/kindspec/rowspec)** | rows | opaque row ids | draft 0, [on PyPI](https://pypi.org/project/rowspec/) |
-| **[blockspec](https://github.com/kindspec/blockspec)** | blocks | deliberately no minted ids | design pass — spike, **no verdict** |
-| **[nodespec](https://github.com/kindspec/nodespec)** | nodes | named, not positional | **not started** |
+| **[blockspec](https://github.com/kindspec/blockspec)** | blocks | deliberately no minted ids | draft 0 — decisions, conformance cases, a reference; spike **FOUND** |
+| **[nodespec](https://github.com/kindspec/nodespec)** | nodes | named, not positional | **not started** — spike closed, no verdict |
 
-Only rowspec has a specification. blockspec has a pre-registered spike — its
-criterion for "found" committed before the experiment, its harness validated —
-and no verdict yet on whether prose needs a format at all. nodespec is a named
-intention and a settled identity decision. Neither has a draft, and saying so is
-cheaper than being asked.
+Only rowspec has a written specification. blockspec's draft 0 is defined by
+two adjudications and a conformance case tree, with one reference
+implementation, and no `SPEC.md` yet. Its pre-registered spike's binding
+verdict is FOUND, reached by rerunning one step under an owner ruling that
+overrides frozen rules; blockspec's `spike/LOG.md` §34–§35 records the
+ruling, its disclosures and the noise beside it. nodespec is a named intention
+and a settled identity decision; its pre-registered spike ended with no
+verdict and is closed. Saying so is cheaper than being asked.
 
 Two repositories support all three:
 
