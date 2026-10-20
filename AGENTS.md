@@ -306,9 +306,11 @@ failure this project keeps finding in itself.
 
 **New behaviour needs a fixture, and the fixture must be able to fail.**
 
-**Do not add a case in the same change that adds the code it covers.** This is
-the one hard process rule and it exists because it was violated three times
-during rowspec's design.
+**Conformance cases are written by an author who has seen no implementation
+(logging what they were given), and run against the implementation unchanged.
+Landing them in the same pull request as the code is fine when that is where
+they first run, in their own commit.** This is the one hard process rule and it
+exists because it was violated three times during rowspec's design.
 
 **Errors name entities, never offsets.** `#REF!(unit)`, not "error at line 7".
 
