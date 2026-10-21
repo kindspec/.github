@@ -322,17 +322,17 @@ MUTANTS = [
     ),
     (
         "own undecided push refused again",
-        "in push_unknown\n                        if other != path and c in (None, context)",
-        "in push_unknown\n                        if c in (None, context)",
+        "in push_unknown\n                        if other != path and _could_be(c, context)",
+        "in push_unknown\n                        if _could_be(c, context)",
     ),
     (
         "undecided push refused for any context",
-        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path and _could_be(c, context)",
         "in push_unknown\n                        if other != path",
     ),
     (
         "unknown-name push job refused only by name",
-        "in push_unknown\n                        if other != path and c in (None, context)",
+        "in push_unknown\n                        if other != path and _could_be(c, context)",
         "in push_unknown\n                        if other != path and c == context",
     ),
     (
@@ -369,8 +369,8 @@ MUTANTS = [
     ),
     (
         "unknown push job accepted",
-        "            if unresolved:\n                unknown.append",
-        "            if False:\n                unknown.append",
+        "            if unresolved:\n                form = matrix_form",
+        "            if False:\n                form = matrix_form",
     ),
     (
         "push producers not collected",
@@ -396,17 +396,17 @@ MUTANTS = [
     ),
     (
         "own undecided pr refused again",
-        "in pr_unknown\n                        if other != path and c in (None, context)",
-        "in pr_unknown\n                        if c in (None, context)",
+        "in pr_unknown\n                        if other != path and _could_be(c, context)",
+        "in pr_unknown\n                        if _could_be(c, context)",
     ),
     (
         "undecided pr refused for any context",
-        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path and _could_be(c, context)",
         "in pr_unknown\n                        if other != path",
     ),
     (
         "unknown-name pr job refused only by name",
-        "in pr_unknown\n                        if other != path and c in (None, context)",
+        "in pr_unknown\n                        if other != path and _could_be(c, context)",
         "in pr_unknown\n                        if other != path and c == context",
     ),
     (
@@ -595,8 +595,8 @@ MUTANTS = [
     ),
     (
         "deploy doubts never refused",
-        "for other, _, why in deploy_unknown if other != path",
-        "for other, _, why in [] if other != path",
+        "for other, c, why in deploy_unknown\n",
+        "for other, c, why in []\n",
     ),
     (
         "deploy-only check not refused",
@@ -647,8 +647,8 @@ MUTANTS = [
     ),
     (
         "unread deployment job does not refuse an orphan",
-        "            elif context not in produced and deploy_unknown:\n",
-        "            elif False:\n",
+        "            elif context not in produced and any(\n",
+        "            elif False and any(\n",
     ),
     (
         "review trigger kept where another workflow covers",
@@ -677,6 +677,70 @@ MUTANTS = [
             "        snapshot, skipped = collect(args.org, args.public_only)\n"
             "        findings, incomplete, stats = evaluate(snapshot, ALLOW)\n"
         ),
+    ),
+    # always() aggregators and literal-named matrix jobs
+    (
+        "always() treated as any if",
+        "    if jobs[job_id][2] == ALWAYS:\n        return None",
+        "    if False:\n        return None",
+    ),
+    (
+        "always() not recognised",
+        'has_if = ALWAYS if "if" in job and _ALWAYS.fullmatch(str(job["if"])) else "if" in job',
+        'has_if = "if" in job',
+    ),
+    (
+        "always() matched as a prefix",
+        '_ALWAYS.fullmatch(str(job["if"]))',
+        '_ALWAYS.match(str(job["if"]))',
+    ),
+    (
+        "${{ always() }} not recognised",
+        r"""_ALWAYS = re.compile(r"\s*(?:always\(\)|\$\{\{\s*always\(\)\s*\}\})\s*")""",
+        r"""_ALWAYS = re.compile(r"\s*(?:always\(\))\s*")""",
+    ),
+    (
+        "every matrix named",
+        "unresolved = MATRIX_NAMED if named else MATRIX",
+        "unresolved = MATRIX_NAMED",
+    ),
+    ("no matrix named", "unresolved = MATRIX_NAMED if named else MATRIX", "unresolved = MATRIX"),
+    ("empty list counts as a value", "isinstance(v, list) and v\n", "isinstance(v, list)\n"),
+    ("include counts as a key", 'if k not in ("include", "exclude")', 'if k != "exclude"'),
+    ("matrix caller narrowed", '                "uses" not in job\n', "                True\n"),
+    ("expression-named matrix narrowed", '                and "${{" not in context\n', ""),
+    (
+        "matrix form matches the bare name",
+        r"""re.escape(context) + r" \(.+\)")""",
+        r"""re.escape(context) + r"( \(.+\))?")""",
+    ),
+    (
+        "matrix narrowed whatever is required",
+        "if form and not any(form.fullmatch(c) for c in required):",
+        "if form:",
+    ),
+    (
+        "narrowed matrix not reported ungated",
+        "                    # every context it reports is '<name> (<values>)', and none is required\n",
+        (
+            "                    # every context it reports is '<name> (<values>)', and none is required\n"
+            "                    continue\n"
+        ),
+    ),
+    (
+        "could_be takes every pattern",
+        "        return bool(c.fullmatch(context))",
+        "        return True",
+    ),
+    (
+        "could_be takes no pattern",
+        "        return bool(c.fullmatch(context))",
+        "        return False",
+    ),
+    (
+        "any deployment doubt refuses an orphan",
+        "_could_be(c, context) for _, c, _ in deploy_unknown",
+        "True for _, c, _ in deploy_unknown",
     ),
 ]
 
