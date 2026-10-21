@@ -1,7 +1,7 @@
 # State of play
 
-Current as of **2026-10-15 (UTC)**, except the .github section, re-read on
-**2026-10-21 (UTC)**. Read `AGENTS.md` first — it is the
+Current as of **2026-10-15 (UTC)**, except the nodespec and .github sections,
+re-read on **2026-10-21 (UTC)**. Read `AGENTS.md` first — it is the
 contract. This file is where the work actually stands, what comes next, and the
 traps that have already cost time.
 
@@ -336,7 +336,7 @@ of a quote anchor resolves. The D8 harnesses refuse a corpus off its pin
 **The corpora are not in the repository.** `CORPORA.md` names each one with its
 source and pin. A fresh machine has to clone them; see §3.
 
-### nodespec — the mermaid spike ran and is closed; identity is parked
+### nodespec — spec draft 0, a reference checker and its cases; the spike is closed
 
 `spike/mermaid/` (nodespec#2 to #10) asked whether stock git merges a Mermaid
 flowchart silently wrong. Both of its questions ended **NO VERDICT**
@@ -346,30 +346,41 @@ The spike is closed and identity is parked (`README.md`, nodespec#10). The
 bound `aggregate` was never run: the frozen aggregator raises `TypeError` on
 the real results, and the verdict was computed by the owner's ruling with the
 frozen `aggregate.verdict` on the non-null-key cases (`LOG.md` §15,
-`ruling/redfirst.py`). No specification, suite or implementation; no
-workflows, no issues.
+`ruling/redfirst.py`).
+
+**Since then** (re-read on 2026-10-21 with `gh api`, `main` at `9b7c89b`):
+`SPEC.md` is draft 0, written from `docs/adjudications/0001-mermaid-profile.md`
+(nodespec#13, #14). `reference/nodespec/` is a checker for it, and
+`conformance/` holds its cases (nodespec#15, titled "301 cases"; 322
+`expect.json` files under `conformance/` today, `gh api
+"repos/kindspec/nodespec/git/trees/main?recursive=1"`). One workflow,
+`.github/workflows/check.yml`, runs a Python 3.11 and 3.12 matrix and a
+`check` aggregator, and the ruleset requires `check`, strict. No open issues
+(`gh issue list -R kindspec/nodespec --state open`).
 
 ### .github — the org contract, this file, the org page, the audit
 
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 1 on the org.** On 2026-10-21, at
-`bae19c1`:
+**The required-checks audit exits 0 on the org with this branch's script.** On
+2026-10-21, at `4dd0436`:
 
     $ python3 -I scripts/check_required_checks.py --public-only
-    CONDITIONAL  nodespec: .github/workflows/check.yml: job 'check-all' is required but can be skipped, which reports success: job-level if:
-    CONDITIONAL  rowspec: .github/workflows/check.yml: job 'conformance-all' is required but can be skipped, which reports success: job-level if:
-    INCOMPLETE   … four matrix jobs, nodespec's `check` and rowspec's `conformance`, not evaluated …
     2 private repositories skipped (--public-only)
-    6 repositories, 9 workflows, 12 pull request jobs, 10 required checks: 2 finding(s), 4 not evaluated
+    6 repositories, 9 workflows, 12 pull request jobs, 10 required checks: 0 finding(s), 0 not evaluated
 
-On 2026-10-15, at `cb04c2c`, it gave `6 repositories, 8 workflows, 9 pull
-request jobs, 9 required checks: 0 finding(s), 0 not evaluated`. The ninth
+The same day, `main` at `18d47b6` gave `2 finding(s), 4 not evaluated`, exit 1:
+CONDITIONAL on nodespec's `check-all` and rowspec's `conformance-all`, and
+four refusals over those repositories' two Python matrix jobs. Each `-all` job
+reports the matrix under the required name with `if: always()`, which cannot
+be skipped. Each matrix reports only `<name> (<version>)` contexts, as `check
+(3.11)` and `conformance (3.12)` do on each repository's `main` (`gh api
+repos/kindspec/<repo>/commits/<sha>/check-runs`), so neither can produce a
+required context. Both matrix jobs are in `ALLOW`, gated through their
+aggregator. On 2026-10-15, at `cb04c2c`, the audit gave `6 repositories, 8
+workflows, 9 pull request jobs, 9 required checks: 0 finding(s)`; the ninth
 workflow is nodespec's `check.yml`, and the tenth check its required `check`.
-Each finding is an `if: always()` job that reports a matrix under the
-required name (nodespec's `check-all`, rowspec's `conformance-all`); that is
-left to a separate change.
 
 **It runs daily; the 2026-10-20 run was its first scheduled failure.**
 `.github/workflows/required-checks-audit.yml` runs the line above on cron
@@ -396,7 +407,10 @@ names either job (.github#20), or on `pull_request_review`, or a
 it with a reason. One that only `pull_request_review` produces is TRIGGER,
 exit 1. A filter or a job name it cannot settle is refused, exit 2, and so is
 a required check that only deployment jobs produce, or that only an unread
-deployment job could.
+deployment job could. A job-level `if:` of exactly `always()` is not
+CONDITIONAL. A matrix job with a literal name reports only
+`<name> (<values>)`, so it is refused only when a required context has that
+form; otherwise it is UNGATED unless `ALLOW` names it.
 
 `pull_request_target` check runs carry the pull request's head sha:
 python/cpython run 25066296099 (fork PR 149109), electron/electron run
