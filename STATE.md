@@ -374,8 +374,9 @@ The same day, `main` at `18d47b6` gave `2 finding(s), 4 not evaluated`, exit 1:
 CONDITIONAL on nodespec's `check-all` and rowspec's `conformance-all`, and
 four refusals over those repositories' two Python matrix jobs. Each `-all` job
 reports the matrix under the required name with `if: always()`, which cannot
-be skipped, and one step that tests `needs.<matrix>.result`. Each matrix reports only `<name> (<version>)` contexts, as `check
-(3.11)` and `conformance (3.12)` do on each repository's `main` (`gh api
+be skipped, and one step that tests `needs.<matrix>.result` = `success`. Each
+matrix reports only `<name> (<version>)` contexts, as `check (3.11)` and
+`conformance (3.12)` do on each repository's `main` (`gh api
 repos/kindspec/<repo>/commits/<sha>/check-runs`), so neither can produce a
 required context. Both matrix jobs are in `ALLOW`, gated through their
 aggregator. On 2026-10-15, at `cb04c2c`, the audit gave `6 repositories, 8
@@ -408,11 +409,11 @@ it with a reason. One that only `pull_request_review` produces is TRIGGER,
 exit 1. A filter or a job name it cannot settle is refused, exit 2, and so is
 a required check that only deployment jobs produce, or that only an unread
 deployment job could. A job-level `if:` of exactly `always()` is not
-CONDITIONAL when the job has needs and a plain `run:` step reads
-`needs.<n>.result` for each. A matrix job with a literal name reports only
-`<name> (<values>)`, so it is refused only when a required context has that
-form; otherwise it is UNGATED unless `ALLOW` names it and a required job of
-that kind needs it.
+CONDITIONAL when the job has needs and, for each, a one-line `run:` step that
+compares `${{ needs.<n>.result }}` for equality with `success`. A matrix job
+with a literal name reports only `<name> (<values>)`, so it is refused only
+when a required context has that form; otherwise it is UNGATED unless `ALLOW`
+names it and a required job of that kind needs it.
 
 `pull_request_target` check runs carry the pull request's head sha:
 python/cpython run 25066296099 (fork PR 149109), electron/electron run
