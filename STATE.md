@@ -363,8 +363,8 @@ frozen `aggregate.verdict` on the non-null-key cases (`LOG.md` §15,
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 0 on the org with this branch's script.** On
-2026-10-21, at `4dd0436`:
+**The required-checks audit exits 0 on the org** with the script as .github#28
+leaves it. On 2026-10-21:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     2 private repositories skipped (--public-only)
@@ -374,7 +374,7 @@ The same day, `main` at `18d47b6` gave `2 finding(s), 4 not evaluated`, exit 1:
 CONDITIONAL on nodespec's `check-all` and rowspec's `conformance-all`, and
 four refusals over those repositories' two Python matrix jobs. Each `-all` job
 reports the matrix under the required name with `if: always()`, which cannot
-be skipped. Each matrix reports only `<name> (<version>)` contexts, as `check
+be skipped, and one step that tests `needs.<matrix>.result`. Each matrix reports only `<name> (<version>)` contexts, as `check
 (3.11)` and `conformance (3.12)` do on each repository's `main` (`gh api
 repos/kindspec/<repo>/commits/<sha>/check-runs`), so neither can produce a
 required context. Both matrix jobs are in `ALLOW`, gated through their
@@ -408,9 +408,11 @@ it with a reason. One that only `pull_request_review` produces is TRIGGER,
 exit 1. A filter or a job name it cannot settle is refused, exit 2, and so is
 a required check that only deployment jobs produce, or that only an unread
 deployment job could. A job-level `if:` of exactly `always()` is not
-CONDITIONAL. A matrix job with a literal name reports only
+CONDITIONAL when the job has needs and a plain `run:` step reads
+`needs.<n>.result` for each. A matrix job with a literal name reports only
 `<name> (<values>)`, so it is refused only when a required context has that
-form; otherwise it is UNGATED unless `ALLOW` names it.
+form; otherwise it is UNGATED unless `ALLOW` names it and a required job of
+that kind needs it.
 
 `pull_request_target` check runs carry the pull request's head sha:
 python/cpython run 25066296099 (fork PR 149109), electron/electron run
