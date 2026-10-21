@@ -395,10 +395,36 @@ lines 55–64 at `60f9f34`) lists `push`, `pull_request`, `pull_request_review`,
 checks count. That a ruleset accepts a `pull_request_target` check is the
 documentation's word; no kindspec ruleset has been watched doing it.
 
-**What it still does not see** (.github#22, the repository's one open issue):
-`pull_request_review`, `deployment` and `deployment_status` as producers, and
-two jobs of one workflow with the same context. On 2026-10-15 no kindspec
-workflow runs on those events or repeats a context within one workflow (read
+**The other events on that list, and two jobs of one workflow** (.github#22).
+Read-only checks on 2026-10-20, with `gh api repos/<o>/<r>/actions/runs/<id>`,
+`…/runs/<id>/jobs`, `commits/<sha>/check-runs`, `deployments?sha=<sha>`, and
+a GraphQL query of the pull request's `statusCheckRollup`:
+
+    run                                              event                pull request head
+    vectordotdev/vector 39523324096                  pull_request_review  PR 26759, 84aba9b
+    Expensify/App 39523875193                        pull_request_review  fork PR 102135, d52f209
+    oaknational/oak-ai-lesson-assistant 39512415827  deployment_status    PR 1157, 97881e5
+    timvir/timvir 39506542194                        deployment_status    PR 4043, 207ee29
+    kube-HPC/hkube 39365408319                       deployment           PR 2500, 43c5a07
+
+Each run's check runs are listed on that head and in the pull request's rollup
+with the run's event. Expensify's head carries `checklist` from nine
+`pull_request_review` runs, one per review, so that event reports on a head
+only once someone reviews it. Each deployment run's `head_sha` is the sha of a
+deployment created for that head (by `vercel[bot]` or `hkube-ci`), so those
+events report on a head only when something deploys it. Hence:
+
+- `pull_request_review` is a pull request event: a second producer is a
+  DUPLICATE, an unrequired job is UNGATED, and a required check it alone
+  produces is TRIGGER, not ORPHANED. A branch or path filter on it is refused,
+  exit 2.
+- A `deployment` or `deployment_status` job with a required context is a
+  DUPLICATE. A required check that only such jobs produce is refused, exit 2:
+  whether every head is deployed is not in any workflow file.
+- Two jobs of one workflow with the same required context are a DUPLICATE.
+
+On 2026-10-20 no kindspec workflow runs on those events, and the audit's
+output on that day's snapshot is the same before and after the change (read
 from each public repository's `.github/workflows/` on `main`).
 
 #### Security settings, org-wide
@@ -476,8 +502,6 @@ In order:
    implementation is what tests whether the spec defines the format.
 6. **kindkit — publication**, if the owner chooses it (above); rowspec#47
    waits on it.
-7. **.github#22 — the producers the audit does not read yet.** Low priority
-   while no kindspec workflow has one (§1).
 
 Open issues carry acceptance criteria and a red-before-green requirement. List
 them per repository rather than trusting a count written here:
@@ -781,6 +805,10 @@ carrying its own total:
 - the same audit, with that fixed, still reporting 0 findings when the second
   producer was a job of the same name in another workflow on `pull_request` or
   `pull_request_target` (.github#20)
+- the same audit, with that fixed, still reporting 0 findings when the second
+  producer ran on `pull_request_review`, `deployment` or `deployment_status`,
+  or was another job of the same workflow, and ORPHANED for a required check
+  that only `pull_request_review` produced (.github#22)
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)

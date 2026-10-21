@@ -181,13 +181,17 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   (kindspec/rowspec#43). The second producer can also be a `push` job in a
   different workflow with the same name. Restrict `push` to the default branch,
   or to tags. It can also run on the pull request itself: a job of the same
-  name in another workflow on `pull_request` or `pull_request_target`, or one
-  workflow on both. The audit reports each of these as DUPLICATE: `push` with
+  name in another workflow on `pull_request`, `pull_request_target` or
+  `pull_request_review`, or one workflow on two of them. It can be a
+  `deployment` or `deployment_status` job, whose check runs land on any head
+  that something deploys. And it can be a second job of the same name in the
+  same workflow. The audit reports each of these as DUPLICATE: `push` with
   no branch filter, a `branches-ignore` that leaves some other branch, or
-  `branches` that match one; or a second pull request producer into the
-  default branch, whether or not `ALLOW` names either job. It refuses, exit 2,
-  a filter it cannot settle either way, and a job elsewhere whose name it
-  cannot resolve.
+  `branches` that match one; a second pull request or deployment producer,
+  whether or not `ALLOW` names either job; or two jobs of one workflow. It
+  refuses, exit 2, a filter it cannot settle either way, a job elsewhere whose
+  name it cannot resolve, and a required check that only deployment jobs
+  produce, since no workflow file says whether every head is deployed.
 - **A check that only `pull_request_target` runs may be unable to fail.** Its
   check runs land on the pull request's head like `pull_request`'s do, and
   GitHub's documentation says they satisfy a required check
@@ -197,10 +201,10 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   unless it checks out the pull request, so the pull request can neither change
   the job nor, by default, make it fail — §2.2, one layer up. The audit reports
   a required check whose only pull request producers are `pull_request_target`
-  jobs as TARGET-ONLY, unless a `push` run on the pull request's branch also
-  produces it (that run tests the pull request's code, and is a DUPLICATE). It
-  cannot tell whether the job checks out the pull request, so accepting one is
-  a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
+  jobs as TARGET-ONLY, unless a `push` that admits some branch other than the
+  default, or a deployment job, also produces it: TARGET-ONLY then gives way
+  to that DUPLICATE. It cannot tell whether the job checks out the pull
+  request, so accepting one is a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
   reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
   that gates nothing.
 
