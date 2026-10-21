@@ -36,17 +36,19 @@ every one of them.
 | | unit | identity | status |
 |---|---|---|---|
 | **[rowspec](https://github.com/kindspec/rowspec)** | rows | opaque row ids | draft 0, [on PyPI](https://pypi.org/project/rowspec/) |
-| **[blockspec](https://github.com/kindspec/blockspec)** | blocks | deliberately no minted ids | draft 0 — decisions, conformance cases, a reference; spike **FOUND** |
-| **[nodespec](https://github.com/kindspec/nodespec)** | nodes | named, not positional | **not started** — spike closed, no verdict |
+| **[blockspec](https://github.com/kindspec/blockspec)** | blocks | deliberately no minted ids | draft 0 — spec, conformance cases, a reference; spike **FOUND** |
+| **[nodespec](https://github.com/kindspec/nodespec)** | nodes | named, not positional | draft 0 — spec, conformance cases, a reference checker |
 
-Only rowspec has a written specification. blockspec's draft 0 is defined by
-two adjudications and a conformance case tree, with one reference
-implementation, and no `SPEC.md` yet. Its pre-registered spike's binding
-verdict is FOUND, reached by rerunning one step under an owner ruling that
-overrides frozen rules; blockspec's `spike/LOG.md` §34–§35 records the
-ruling, its disclosures and the noise beside it. nodespec is a named intention
-and a settled identity decision; its pre-registered spike ended with no
-verdict and is closed. Saying so is cheaper than being asked.
+Each kind has a written specification at draft 0; only rowspec's is
+released, and only rowspec has a second implementation. blockspec's `SPEC.md`
+writes up four adjudications, with a conformance case tree and one reference
+implementation. Its pre-registered spike's binding verdict is FOUND, reached
+by rerunning one step under an owner ruling that overrides frozen rules;
+blockspec's `spike/LOG.md` §34–§35 records the ruling, its disclosures and
+the noise beside it. nodespec's `SPEC.md` writes up one adjudication, a
+Mermaid flowchart profile with declared names. Its spike on real history
+ended with no verdict and is closed; constructed cases met an existence
+criterion fixed before they ran. Saying so is cheaper than being asked.
 
 Two repositories support all three:
 
