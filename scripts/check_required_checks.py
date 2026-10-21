@@ -29,11 +29,13 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                `if:` of exactly always() or ${{ always() }} cannot be skipped,
                but such a job runs, and passes, whatever its needs did unless a
                step fails it. So it counts as not skippable only when it has
-               needs and, for each, a run: step with no `if:` and no
-               continue-on-error reads needs.<n>.result; this checks that the
-               result is read, not what the step does with it. Otherwise, and
-               for `always() && x`, success() and !cancelled(), it can be
-               skipped. always() is matched as written: GitHub's documentation
+               needs, no job-level continue-on-error, and, for each need, a
+               one-line run: step with no `if:`, no continue-on-error and no
+               `||` that compares ${{ needs.<n>.result }} for equality with
+               success. A `run: |` or `run: >` block is not read. This checks
+               the comparison, not the rest of the step. Otherwise, and for
+               `always() && x`, success() and !cancelled(), it can be skipped,
+               and the finding says which. always() is matched as written: GitHub's documentation
                says string comparison ignores case, not that function names do
   PATH-FILTER  a required job is path-filtered, so it never reports on an
                unrelated pull request and blocks it forever (AGENTS.md 3.2).
@@ -189,6 +191,10 @@ DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unre
 MATRIX = "matrix job; contexts are expanded per combination"
 MATRIX_NAMED = "matrix job; it reports '<name> (<values>)' for each combination"
 ALWAYS = "always"  # a job-level `if:` of exactly always(), which cannot be skipped
+UNCHECKED = (  # the same, in a job with no step that fails it when a need did not succeed
+    "job-level if: always(), but no one-line run: step tests that each need's result is "
+    "success, so it passes whatever they did"
+)
 _ALWAYS = re.compile(r"\s*(?:always\(\)|\$\{\{\s*always\(\)\s*\}\})\s*")
 PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review")
 REVIEW_TYPES = ("submitted", "edited", "dismissed")  # pull_request_review's, none a push
@@ -581,28 +587,38 @@ def jobs_of(workflow):
         needs = [str(n) for n in (needs if isinstance(needs, list) else [needs])]
         uses = str(job["uses"]) if "uses" in job else None
         has_if = "if" in job
-        if has_if and _ALWAYS.fullmatch(str(job["if"])) and _checks_needs(job, needs):
-            has_if = ALWAYS
+        if has_if and _ALWAYS.fullmatch(str(job["if"])):
+            has_if = ALWAYS if _checks_needs(job, needs) else UNCHECKED
         yield job_id, context, has_if, needs, unresolved, uses
 
 
 def _checks_needs(job, needs):
-    """Whether, for each of its needs, an unconditional run: step reads needs.<n>.result.
+    """Whether, for each of its needs, an unconditional run: step tests needs.<n>.result.
 
     A job that runs always() succeeds whatever its needs did unless a step fails it, so
-    only then does it gate them. This reads that the result is referenced, not the logic.
+    only then does it gate them. A step counts when its one-line run compares
+    ${{ needs.<n>.result }} for equality with success, either way round, and holds no
+    `||`; a `run: |` or `run: >` block is not read. This reads the comparison, not what
+    the rest of the step does.
     """
     steps = job.get("steps")
-    if not needs or not isinstance(steps, list):
+    if not needs or not isinstance(steps, list) or "continue-on-error" in job:
         return False
     runs = [
         str(step.get("run", ""))
         for step in steps
         if isinstance(step, dict) and not {"if", "continue-on-error"} & set(step)
     ]
-    return all(
-        any(re.search(rf"\bneeds\.{re.escape(n)}\.result\b", run) for run in runs) for n in needs
-    )
+    runs = [run for run in runs if "||" not in run]
+
+    def tested(n):
+        result = rf"\$\{{\{{\s*needs\.{re.escape(n)}\.result\s*\}}\}}"
+        success = r"(?:success|'success'|\"success\")"
+        quoted = rf"(?:{result}|'{result}'|\"{result}\")"
+        compare = rf"{quoted}\s*==?\s*{success}(?![\w-])|(?<![\w-]){success}\s*==?\s*{quoted}"
+        return any(re.search(compare, run) for run in runs)
+
+    return all(tested(n) for n in needs)
 
 
 def matrix_form(context, unresolved):
@@ -707,6 +723,8 @@ def _skippable(job_id, jobs, required, calls, seen=frozenset()):
     """Why job_id can be skipped on a pull request, or None."""
     if jobs[job_id][2] == ALWAYS:
         return None  # it runs whatever its needs did, and nothing it needs can skip it
+    if jobs[job_id][2] == UNCHECKED:
+        return UNCHECKED
     if jobs[job_id][2]:
         return "job-level if:"
     for n in jobs[job_id][3]:
@@ -2295,6 +2313,87 @@ def selftest():
             legs_ok,
         ),
         (
+            "always() aggregator that only echoes the result",
+            repo(gate("always()", step='echo "${{ needs.legs.result }}"')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing != failure",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" != failure')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing != success",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" != success')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing = successful",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" = successful')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator whose test cannot fail (|| true)",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" = success || true')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing xsuccess = result",
+            repo(gate("always()", step='test xsuccess = "${{ needs.legs.result }}"')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing == 'success'",
+            repo(gate("always()", step="test '${{ needs.legs.result }}' == 'success'")),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing success = result",
+            repo(gate("always()", step='test success = "${{ needs.legs.result }}"')),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing an unquoted result",
+            repo(gate("always()", step='test ${{ needs.legs.result }} = "success"')),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator with job-level continue-on-error",
+            repo(
+                gate("always()").replace(
+                    "    runs-on: x\n    steps:",
+                    "    runs-on: x\n    continue-on-error: true\n    steps:",
+                )
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing in a block run",
+            repo(gate("always()", step='|\n          test "${{ needs.legs.result }}" = success')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator whose need id holds a regex character",
+            repo(
+                gate("always()", "l.gs", legs.replace("  legs:", "  l.gs:")).replace(
+                    "needs.l.gs.result", "needs.lxgs.result"
+                )
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            {("r", "w.yml", "l.gs"): "test"},
+        ),
+        (
             "unrequired always() job over an allowlisted matrix",
             repo(gate("always()").replace("  check:\n", "  check:\n    name: extra\n"), []),
             ["UNGATED", "UNGATED"],
@@ -2883,6 +2982,17 @@ def selftest():
     got = [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc) + ["?"] * (stats["pr_jobs"] != 3)
     report(f"3 pull request jobs counted ({stats['pr_jobs']})", got, exit_code(f, inc), [], 0)
 
+    # an always() job that tests no result says so, not "job-level if:"
+    f, inc, _ = evaluate(repo(gate("always()", step="echo ok")), {})
+    got = [x.split()[0] for x in f] + ["?"] * (not any(UNCHECKED in x for x in f))
+    report(
+        "always() without a result test names why",
+        got,
+        exit_code(f, inc),
+        ["UNGATED", "CONDITIONAL"],
+        1,
+    )
+
     # collection: failures exit 2, never 1 and never a crash
     pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
     priv = {"name": "q", "default_branch": "main", "archived": False, "private": True}
@@ -3085,7 +3195,7 @@ def selftest():
                     report(f"{label} with TARGET_OK {accepted}", got, code, want, len(want))
     finally:
         TARGET_OK, GH, ALLOW = saved
-    total = len(cases) + len(collection) + 13
+    total = len(cases) + len(collection) + 14
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 

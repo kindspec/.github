@@ -686,8 +686,8 @@ MUTANTS = [
     ),
     (
         "always() not recognised",
-        "            has_if = ALWAYS\n",
-        "            pass\n",
+        '        if has_if and _ALWAYS.fullmatch(str(job["if"])):\n',
+        "        if False:\n",
     ),
     (
         "always() matched as a prefix",
@@ -778,13 +778,13 @@ MUTANTS = [
     ),
     (
         "always() steps not read",
-        'if has_if and _ALWAYS.fullmatch(str(job["if"])) and _checks_needs(job, needs):',
-        'if has_if and _ALWAYS.fullmatch(str(job["if"])):',
+        "has_if = ALWAYS if _checks_needs(job, needs) else UNCHECKED",
+        "has_if = ALWAYS",
     ),
     (
         "always() with no needs accepted",
-        "    if not needs or not isinstance(steps, list):",
-        "    if not isinstance(steps, list):",
+        "    if not needs or not isinstance(steps, list) or",
+        "    if not isinstance(steps, list) or",
     ),
     (
         "conditional step reads the result",
@@ -796,11 +796,25 @@ MUTANTS = [
         'not {"if", "continue-on-error"} & set(step)',
         'not {"if"} & set(step)',
     ),
-    ("one need's result suffices", "    return all(\n", "    return any(\n"),
+    ("one need's result suffices", "return all(tested(n)", "return any(tested(n)"),
+    # the result must be compared for equality with success (second review of #28)
+    ("need id not escaped", r"needs\.{re.escape(n)}\.result", r"needs\.{n}\.result"),
+    ("inequality accepted", r'rf"{quoted}\s*==?\s*{success}', r'rf"{quoted}\s*!?==?\s*{success}'),
+    ("success prefix accepted", r"{success}(?![\w-])", r"{success}"),
+    ("reversed success suffix accepted", r"(?<![\w-]){success}", r"{success}"),
+    ("reversed order not read", r"|(?<![\w-]){success}\s*==?\s*{quoted}", ""),
+    ("quoted result not read", r"""(?:{result}|'{result}'|\"{result}\")""", r"(?:{result})"),
     (
-        "result reference read as a substring",
-        r'rf"\bneeds\.{re.escape(n)}\.result\b"',
-        r'rf"needs\.{re.escape(n)}"',
+        "any word compared",
+        r"""(?:success|'success'|\"success\")""",
+        r"""(?:\w+|'\w+'|\"\w+\")""",
+    ),
+    ("|| accepted", 'runs = [run for run in runs if "||" not in run]', "runs = runs"),
+    ("job continue-on-error accepted", ' or "continue-on-error" in job:', ":"),
+    (
+        "unchecked always() reported as job-level if",
+        "    if jobs[job_id][2] == UNCHECKED:\n        return UNCHECKED\n",
+        "",
     ),
 ]
 
