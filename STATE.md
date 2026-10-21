@@ -174,9 +174,7 @@ shows it.
   publication).
 
 Every other issue this file named on 2026-10-15 is closed, rowspec#141
-merged, and no pull request is open (`gh api
-repos/kindspec/rowspec/issues/<n> --jq .state`; `gh pr list -R
-kindspec/rowspec --state open`).
+merged (`gh api repos/kindspec/rowspec/issues/<n> --jq .state`).
 
 The suite, the mutation gate and the case-tree convention come from kindkit,
 pinned by commit. What stayed in rowspec is everything kindkit cannot be told.
@@ -534,10 +532,10 @@ from each public repository's `.github/workflows/` on `main`).
 recorded rejection of a push to `main`, each still returned with `result`
 `fail` by `gh api repos/kindspec/<repo>/rulesets/rule-suites/<id>`: `.github`
 4014197203, rowspec 4014189520 and nodespec 4014318589, all on 2026-09-10.
-research, kindkit and blockspec have none on record (`gh api
-'repos/kindspec/<repo>/rulesets/rule-suites?rule_suite_result=fail&time_period=month'`
-returns an empty list for each on 2026-10-21), so they remain configured,
-not verified.
+research, kindkit and blockspec have none on record, so they remain
+configured, not verified. The `rule-suites` listing cannot settle that: it
+reaches back about a month, so on 2026-10-21 it returns no failure even for
+the three rejections above.
 
 A push holding a generated AWS key pair was refused with `GH013` on each of the
 six (.github#4, closed). A never-issued `ghp_` token is *accepted* — it is not
@@ -613,13 +611,13 @@ closed --limit 300 --json number,closedAt --jq
 
 ## 3. Setting up on a fresh machine
 
-**Toolchain.** `git`, `just`, `python3` 3.11+, `uv` for rowspec, kindkit and
-blockspec, `ruff` and `pytest` through `uv`, and `pre-commit`. A real `git`
+**Toolchain.** `git`, `just`, `python3` 3.11+, `uv` for rowspec, kindkit,
+blockspec and nodespec, `ruff` and `pytest` through `uv`, and `pre-commit`. A real `git`
 binary is a hard dependency of every conformance suite, because the central
 claim is about what stock git does. rowspec's `just test-libreoffice` needs
 `soffice` on `PATH`.
 
-**First command in rowspec, kindkit and blockspec is `uv sync`** (or `just
+**First command in rowspec, kindkit, blockspec and nodespec is `uv sync`** (or `just
 setup`). It creates `.venv`, which is gitignored. `uv sync` needs network
 reach to `github.com`: rowspec and blockspec take `kindkit` as a git
 dependency, so an offline sync fails there. Run it somewhere `~/.cache/uv` is
@@ -921,7 +919,7 @@ carrying its own total:
   `got [] exit 0`)
 - 98 of rowspec's 116 refusing `parse` cases asserting `refusal_contains: ""`,
   which passed on a refusal for any reason (rowspec#61, fixed by rowspec#87;
-  `CHANGELOG.md` `[Unreleased]`)
+  `CHANGELOG.md` `[0.4.0]`)
 
 The pattern is not about tables, and it is why `AGENTS.md` §2.2 is mechanical
 rather than advisory: break the thing a check checks, watch it go red, put it
