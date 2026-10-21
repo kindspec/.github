@@ -1,6 +1,7 @@
 # State of play
 
-Current as of **2026-10-15 (UTC)**. Read `AGENTS.md` first — it is the
+Current as of **2026-10-15 (UTC)**, except the .github section, re-read on
+**2026-10-21 (UTC)**. Read `AGENTS.md` first — it is the
 contract. This file is where the work actually stands, what comes next, and the
 traps that have already cost time.
 
@@ -353,21 +354,29 @@ workflows, no issues.
 `AGENTS.md`, `STATE.md`, `profile/README.md`, the default issue forms, and
 `scripts/check_required_checks.py`.
 
-**The required-checks audit exits 0 on the org.** On 2026-10-15, at
-`cb04c2c`:
+**The required-checks audit exits 1 on the org.** On 2026-10-21, at
+`bae19c1`:
 
     $ python3 -I scripts/check_required_checks.py --public-only
-    1 private repositories skipped (--public-only)
-    6 repositories, 8 workflows, 9 pull request jobs, 9 required checks: 0 finding(s), 0 not evaluated
+    CONDITIONAL  nodespec: .github/workflows/check.yml: job 'check-all' is required but can be skipped, which reports success: job-level if:
+    CONDITIONAL  rowspec: .github/workflows/check.yml: job 'conformance-all' is required but can be skipped, which reports success: job-level if:
+    INCOMPLETE   … four matrix jobs, nodespec's `check` and rowspec's `conformance`, not evaluated …
+    2 private repositories skipped (--public-only)
+    6 repositories, 9 workflows, 12 pull request jobs, 10 required checks: 2 finding(s), 4 not evaluated
 
-The ninth job and check is blockspec's `reference` (blockspec#37), required
-alongside `conformance` in ruleset 22723622.
+On 2026-10-15, at `cb04c2c`, it gave `6 repositories, 8 workflows, 9 pull
+request jobs, 9 required checks: 0 finding(s), 0 not evaluated`. The ninth
+workflow is nodespec's `check.yml`, and the tenth check its required `check`.
+Each finding is an `if: always()` job that reports a matrix under the
+required name (nodespec's `check-all`, rowspec's `conformance-all`); that is
+left to a separate change.
 
-**It runs daily, and every scheduled run has succeeded.**
+**It runs daily; the 2026-10-20 run was its first scheduled failure.**
 `.github/workflows/required-checks-audit.yml` runs the line above on cron
-`17 6 * * *` and by hand. Scheduled runs from 2026-10-08 to 2026-10-14 all
-concluded `success` (`gh api
-"repos/kindspec/.github/actions/workflows/required-checks-audit.yml/runs"
+`17 6 * * *` and by hand. The 12 scheduled runs from 2026-10-08 to 2026-10-19
+concluded `success`, and run 39415720347 on 2026-10-20 concluded `failure`
+(`gh api
+"repos/kindspec/.github/actions/workflows/required-checks-audit.yml/runs?per_page=100"
 --jq '.workflow_runs[]|"\(.id) \(.event) \(.conclusion) \(.created_at)"'`).
 The workflow runs the audit only: the script's self-test and its mutation
 sweep (`python3 -I scripts/check_required_checks.py --selftest`;
@@ -380,9 +389,14 @@ when changing the script.
 exit 1: a `push` on some branch other than the default, in the same workflow
 (.github#16) or another (.github#18), or a second pull request producer on
 `pull_request` or `pull_request_target`, reported whether or not `ALLOW`
-names either job (.github#20). A required check whose only producers are
+names either job (.github#20), or on `pull_request_review`, or a
+`deployment` or `deployment_status` job, or a second job of the same workflow
+(.github#22). A required check whose only producers are
 `pull_request_target` jobs is TARGET-ONLY, exit 1, unless `TARGET_OK` accepts
-it with a reason. A filter or a job name it cannot settle is refused, exit 2.
+it with a reason. One that only `pull_request_review` produces is TRIGGER,
+exit 1. A filter or a job name it cannot settle is refused, exit 2, and so is
+a required check that only deployment jobs produce, or that only an unread
+deployment job could.
 
 `pull_request_target` check runs carry the pull request's head sha:
 python/cpython run 25066296099 (fork PR 149109), electron/electron run
@@ -809,6 +823,10 @@ carrying its own total:
   producer ran on `pull_request_review`, `deployment` or `deployment_status`,
   or was another job of the same workflow, and ORPHANED for a required check
   that only `pull_request_review` produced (.github#22)
+- the change that fixed it, before merge, reporting ORPHANED, exit 1, rather
+  than refusing, for a required check that only a deployment matrix job, an
+  expression-named one or one calling an unread workflow could produce
+  (.github#27)
 - `corpus_check.py`, a green CI step in rowspec that never opened a `.mdtbl`
   file and printed `0 identified artifact(s), 0 duplicate id(s)` on rowspec's
   own tree (rowspec#68)

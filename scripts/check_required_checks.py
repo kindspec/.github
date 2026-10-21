@@ -14,7 +14,9 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
   TRIGGER      a required job's pull_request or pull_request_target `types:`
                omit opened or synchronize, so it does not report on every pull
                request head; pull_request_review never covers them, since it
-               runs only when a review is submitted, edited or dismissed. With
+               runs only when a review is submitted, edited or dismissed, and
+               is not reported where another workflow reports the context on
+               every head (the DUPLICATE is the finding there). With
                several events, only when the events that are not path-filtered
                do not cover both types between them; each blocked event is then
                named. `types: []` counts as no types (GitHub does not document
@@ -96,7 +98,8 @@ context; or a job of another workflow that runs on such a push, or on a pull
 request into the default branch, and whose context is not known (matrix,
 expression or block name, or a call not read), or that runs on deployment or
 deployment_status and whose context is not known; or a required check that only
-deployment or deployment_status jobs produce.
+deployment or deployment_status jobs produce, or that no job produces while such
+a job's context is not known.
 A run that could not look must not report a pass.
 
 A job that calls a reusable workflow (`uses: ./.github/workflows/F.yml`, or

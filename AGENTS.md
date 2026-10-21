@@ -103,15 +103,17 @@ rewritten or the branch deleted, and only squash merges are allowed.
                 kind / conformance
     kindkit     check, kind / conformance                                  yes
     blockspec   conformance, reference                                     yes
-    nodespec    none — no workflows of its own yet                         n/a
+    nodespec    check                                                      yes
     research    none — no workflows of its own yet                         n/a
     .github     none — its one workflow never runs on a pull request       n/a
 
 **"Strict" — branch must be up to date with `main` before merging — applies only
-to `rowspec`, `kindkit` and `blockspec`.** It is a parameter *of* the
+to `rowspec`, `kindkit`, `blockspec` and `nodespec`.** It is a parameter *of* the
 required-checks rule, so a repository with no required checks has no up-to-date
-requirement either. Say "three of six", not "all", and add it when the others
-gain workflows.
+requirement either. Say "four of six", not "all", and add it when the others
+gain workflows. Re-read on 2026-10-21 with `gh api
+repos/kindspec/<repo>/rules/branches/main`, which shows the configuration, not
+a rejection.
 
 **CodeQL runs on every repository** through GitHub's default setup, and is
 deliberately **not** required. Its check names are generated from language
@@ -204,8 +206,8 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   jobs as TARGET-ONLY, unless a `push` that admits some branch other than the
   default, or a deployment job, also produces it: TARGET-ONLY then gives way
   to that DUPLICATE. It cannot tell whether the job checks out the pull
-  request, so accepting one is a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
-  reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
+  request, so accepting one is a decision: add `(repo, context)` to the
+  script's `TARGET_OK`, with the reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
   that gates nothing.
 
 **Verify a rule by watching it reject, not by reading its configuration.**
