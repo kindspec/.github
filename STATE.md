@@ -828,7 +828,8 @@ on every pull request you open.
   with their addenda.
 - **blockspec's anchor design**: adjudication 0003 (owner, 2026-10-16), with
   its addenda, as amended by 0004 (owner, 2026-10-18), which pre-registration
-  5 passed. Changing either is a new adjudication, never an edit.
+  5 passed. Changing either takes an owner decision, recorded as an addendum
+  or a new adjudication, as 0004 was.
 - **A fresh agent behind an information barrier counts as independent.** For
   suite authoring, `AGENTS.md` §2.1 says what the barrier is: an exported
   directory holding only the permitted files and no `.git`, not a worktree.
