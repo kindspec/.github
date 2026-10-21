@@ -475,8 +475,9 @@ def pr_trigger(workflow, branch):
     """(events that reach a PR into branch, [(finding, event, types)], why not).
 
     An event is blocked by a path filter, or by `types:` without opened and
-    synchronize; pull_request_review always is. The blocks are findings only when the unfiltered events together
-    do not cover opened and synchronize: otherwise every head is still reported.
+    synchronize; pull_request_review always is. The blocks are findings only when the
+    unfiltered events together do not cover opened and synchronize: otherwise every head
+    is still reported.
     """
     on = _events(workflow)
     events = pr_events(on, branch)
@@ -656,6 +657,14 @@ def evaluate(snapshot, allow, target_ok=()):
         on_push, push_unknown = producers(data, branch, push_duplicates)
         on_pr, pr_unknown = producers(data, branch, pr_admits)
         on_deploy, deploy_unknown = producers(data, branch, deploy_admits)
+        covering = set()  # workflows that report on every head; on_pr holds only active ones
+        for path, text in data["workflows"].items():
+            try:
+                events, blocked, _ = pr_trigger(parse_yaml(text), branch)
+            except Unsupported:
+                continue  # refused below
+            if events and not blocked:
+                covering.add(path)
         for path, text in sorted(data["workflows"].items()):
             stats["workflows"] += 1
             state = data["workflow_state"].get(path)
@@ -781,10 +790,9 @@ def evaluate(snapshot, allow, target_ok=()):
                             "head whenever that head is deployed, so it can carry it from two "
                             "suites and the merge takes either"
                         )
+                    # deploy_admits never raises, so each of these is a job of unknown context
                     doubts = [
-                        f"{other}: {why}"
-                        for other, c, why in deploy_unknown
-                        if other != path and c in (None, context)
+                        f"{other}: {why}" for other, _, why in deploy_unknown if other != path
                     ]
                     if doubts:
                         incomplete.append(
@@ -792,7 +800,19 @@ def evaluate(snapshot, allow, target_ok=()):
                             "workflow: " + "; ".join(doubts)
                         )
                     for kind, event, types in blocked:
-                        if kind == "PATH-FILTER":
+                        if event == "pull_request_review":
+                            # where another workflow reports on every head, the DUPLICATE
+                            # above is the finding
+                            if not any(
+                                other != path and other in covering
+                                for other, _, _ in on_pr.get(context, [])
+                            ):
+                                findings.append(
+                                    f"TRIGGER      {unit} is required but its pull_request_review "
+                                    f"trigger (types {types}) reports on a head only once "
+                                    "someone reviews it; produce the check from a pull_request job"
+                                )
+                        elif kind == "PATH-FILTER":
                             findings.append(
                                 f"PATH-FILTER  {unit} is required but its {event} "
                                 "trigger is path-filtered"
@@ -822,6 +842,12 @@ def evaluate(snapshot, allow, target_ok=()):
                     f"{repo}: required '{context}' is produced only on deployment or "
                     "deployment_status, which report on a pull request head only when "
                     "something deploys it; the workflow files do not say whether every head is"
+                )
+            elif context not in produced and deploy_unknown:
+                # a deployment job whose context is not known could be this one
+                incomplete.append(
+                    f"{repo}: required '{context}' not matched, and a deployment job was not "
+                    "read: " + "; ".join(f"{w}: {why}" for w, _, why in deploy_unknown)
                 )
             elif context not in produced and blind:
                 incomplete.append(
@@ -1817,11 +1843,12 @@ def selftest():
     kind_twin = "  twin:\n    name: kind / conformance\n    runs-on: x\n"
     more_producers = [
         # pull_request_review is a pull request event, that never covers every head
-        ("other pull_request_review workflow", beside(pr_review), ["DUPLICATE", "TRIGGER"]),
+        # the other workflow reports on every head: the DUPLICATE is the finding
+        ("other pull_request_review workflow", beside(pr_review), dup),
         (
             "other pull_request_review workflow with types",
             beside(target(review + "    types: [submitted]\n")),
-            ["DUPLICATE", "TRIGGER"],
+            dup,
         ),
         (
             "one workflow on pull_request and pull_request_review",
@@ -1838,7 +1865,7 @@ def selftest():
         (
             "pull_request_review clears target-only",
             beside(pr_review, pr_target),
-            ["DUPLICATE", "TRIGGER"],
+            dup,
         ),
         # deployment and deployment_status: a second producer whenever the head is deployed
         ("other deployment workflow", beside(target(deploy)), dup),
@@ -1947,6 +1974,44 @@ def selftest():
             "other pull_request_review with a branch filter is refused",
             beside(target(review + "    branches: [main]\n")),
             inc2,
+        ),
+        # a required check only an unreadable deployment job could produce (review of #27)
+        (
+            "required check only from a deployment matrix job is refused",
+            beside(
+                target(deploy, job="only", body=matrix), None, _CHECK + [{"context": "only (1)"}]
+            ),
+            inc2,
+        ),
+        (
+            "required check only from an expression-named deployment job is refused",
+            beside(
+                target(status, job="only", body="    name: ${{ github.event.deployment.id }}\n"),
+                None,
+                _CHECK + [{"context": "prod"}],
+            ),
+            inc2,
+        ),
+        (
+            "required check only from an unreadable called workflow on deployment is refused",
+            beside(
+                f"on: deployment\njobs:\n  only:\n    uses: {remote}\n",
+                None,
+                _CHECK + [{"context": "only / conformance"}],
+            ),
+            inc2,
+        ),
+        # review's TRIGGER stands where no other workflow reports on every head
+        (
+            "pull_request_review beside a pull_request that misses heads",
+            beside(pr_review, target("  pull_request:\n    types: [labeled]\n")),
+            ["DUPLICATE", "TRIGGER", "TRIGGER"],
+        ),
+        # a job in another workflow is a pair, never a same-workflow twin
+        (
+            "twins tracked across workflows: one pair, no twin",
+            beside(target("  pull_request:\n", job="p", body="    name: check\n")),
+            dup,
         ),
     ]
     # ALLOW neither hides a pull request pair nor counts as a producer's absence

@@ -565,8 +565,8 @@ MUTANTS = [
     ),
     (
         "review counted as covering",
-        '        if event == "pull_request_review":\n',
-        "        if False:\n",
+        'else [types]))\n        if event == "pull_request_review":\n',
+        "else [types]))\n        if False:\n",
     ),
     (
         "deployment producers not collected",
@@ -595,8 +595,8 @@ MUTANTS = [
     ),
     (
         "deploy doubts never refused",
-        "for other, c, why in deploy_unknown\n",
-        "for other, c, why in []\n",
+        "for other, _, why in deploy_unknown if other != path",
+        "for other, _, why in [] if other != path",
     ),
     (
         "deploy-only check not refused",
@@ -637,6 +637,27 @@ MUTANTS = [
         "live run drops its api",
         "collect(org, public_only, api)",
         "collect(org, public_only)",
+    ),
+    # review of #27
+    (
+        "unread deployment job does not refuse an orphan",
+        "            elif context not in produced and deploy_unknown:\n",
+        "            elif False:\n",
+    ),
+    (
+        "review trigger kept where another workflow covers",
+        "other != path and other in covering",
+        "False",
+    ),
+    (
+        "review trigger dropped whatever covers",
+        "other != path and other in covering",
+        "True",
+    ),
+    (
+        "covering ignores blocks",
+        "            if events and not blocked:\n",
+        "            if events:\n",
     ),
 ]
 
