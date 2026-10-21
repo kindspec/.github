@@ -42,8 +42,8 @@ MUTANTS = [
     ("unrequired need ignored", "if any(c not in required for c in contexts):", "if False:"),
     (
         "merge_group counted as a pr event",
-        'PR_EVENTS = ("pull_request", "pull_request_target")',
-        'PR_EVENTS = ("pull_request", "pull_request_target", "merge_group")',
+        '"pull_request_target", "pull_request_review")',
+        '"pull_request_target", "pull_request_review", "merge_group")',
     ),
     (
         "branches-ignore ignored",
@@ -380,8 +380,8 @@ MUTANTS = [
     # DUPLICATE: a second producer on the pull request itself (#20)
     (
         "pull_request_target not a pr event",
-        'PR_EVENTS = ("pull_request", "pull_request_target")',
-        'PR_EVENTS = ("pull_request",)',
+        'PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review")',
+        'PR_EVENTS = ("pull_request", "pull_request_review")',
     ),
     (
         "pr producers not collected",
@@ -546,6 +546,82 @@ MUTANTS = [
             "                if all(any(k[:2] == (repo, e[0]) for k in allow) for e in on_pr[context]):\n"
             "                    continue\n"
         ),
+    ),
+    # pull_request_review, deployment, deployment_status, two jobs of one workflow (#22)
+    (
+        "pull_request_review not a pr event",
+        'PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review")',
+        'PR_EVENTS = ("pull_request", "pull_request_target")',
+    ),
+    (
+        "review filter not refused",
+        '    if isinstance(review, dict) and set(review) - {"types"}:\n',
+        "    if False:\n",
+    ),
+    (
+        "review types refused too",
+        'set(review) - {"types"}:',
+        "set(review):",
+    ),
+    (
+        "review counted as covering",
+        '        if event == "pull_request_review":\n',
+        "        if False:\n",
+    ),
+    (
+        "deployment producers not collected",
+        "producers(data, branch, deploy_admits)",
+        "({}, [])",
+    ),
+    (
+        "deployment not a deploy event",
+        'DEPLOY_EVENTS = ("deployment", "deployment_status")',
+        'DEPLOY_EVENTS = ("deployment_status",)',
+    ),
+    (
+        "deployment_status not a deploy event",
+        'DEPLOY_EVENTS = ("deployment", "deployment_status")',
+        'DEPLOY_EVENTS = ("deployment",)',
+    ),
+    (
+        "deploy duplicate never reported",
+        "for other, job, why in on_deploy.get(context, []):",
+        "for other, job, why in []:",
+    ),
+    (
+        "deploy duplicate only from another workflow",
+        "for other, job, why in on_deploy.get(context, []):",
+        "for other, job, why in [e for e in on_deploy.get(context, []) if e[0] != path]:",
+    ),
+    (
+        "deploy doubts never refused",
+        "for other, c, why in deploy_unknown\n",
+        "for other, c, why in []\n",
+    ),
+    (
+        "deploy-only check not refused",
+        "            elif context not in produced and context in on_deploy:\n",
+        "            elif False:\n",
+    ),
+    (
+        "deployment does not clear target-only",
+        "                and context not in on_deploy\n",
+        "",
+    ),
+    (
+        "two jobs of one workflow never reported",
+        "                    if twin != mine and context in required:\n",
+        "                    if False:\n",
+    ),
+    (
+        "unrequired twins reported",
+        "if twin != mine and context in required:",
+        "if twin != mine:",
+    ),
+    (
+        "twins tracked across workflows",
+        "            own = {}  # context: the first job of this workflow that produces it\n",
+        "            own = own if 'own' in dir() else {}\n",
     ),
 ]
 

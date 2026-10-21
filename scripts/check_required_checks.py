@@ -5,17 +5,20 @@ Adding a workflow to a repository does not add it to the ruleset, so a suite can
 run on every pull request and gate nothing (kindspec/.github#3). This fails when:
 
   UNGATED      a job that runs on pull requests to the default branch, on
-               pull_request or pull_request_target, is not a required check
+               pull_request, pull_request_target or pull_request_review, is not
+               a required check
   ORPHANED     a required check is a context no such job produces. A job that
                runs only on merge_group, push, on pull requests to other
                branches, or in a workflow that is not `active` does not count:
                the context never reports on the PR head
   TRIGGER      a required job's pull_request or pull_request_target `types:`
                omit opened or synchronize, so it does not report on every pull
-               request head. With both events, only when the events that are not
-               path-filtered do not cover both types between them; each blocked
-               event is then named. `types: []` counts as no types (GitHub does
-               not document it), so it is a TRIGGER
+               request head; pull_request_review never covers them, since it
+               runs only when a review is submitted, edited or dismissed. With
+               several events, only when the events that are not path-filtered
+               do not cover both types between them; each blocked event is then
+               named. `types: []` counts as no types (GitHub does not document
+               it), so it is a TRIGGER
   CONDITIONAL  a required job can be skipped, and GitHub reports a skipped job as
                success: it has a job-level `if:`, or something in its `needs:`
                chain has one or is not itself required. When the skipped job calls
@@ -35,19 +38,25 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                <called>' for a call), by `name:` or else its id, equals the
                required one. Its `if:` does not matter: a skipped job still
                reports its context. Likewise when a second producer runs on the
-               pull request itself: the required job's workflow runs on both
-               pull_request and pull_request_target, or another active workflow
-               runs a job of the same context on either, into the default
-               branch. Each pair of workflows is reported once, whether or not
-               ALLOW names either job
+               pull request itself: the required job's workflow runs on two of
+               pull_request, pull_request_target and pull_request_review, or
+               another active workflow runs a job of the same context on any of
+               them, into the default branch. Each pair of workflows is reported
+               once, whether or not ALLOW names either job. Likewise when an
+               active workflow on deployment or deployment_status, this one or
+               another, has a job of the same context: its check runs attach to
+               the deployed commit, which is the pull request head whenever that
+               head is deployed. And when two jobs of one workflow produce the
+               same required context, so one suite carries it twice
   TARGET-ONLY  a required check's only pull request producers are
-               pull_request_target jobs, and no push run on a pull request's
-               branch produces it (that one would test the pull request's code,
-               and is a DUPLICATE). Such a job runs the workflow from the default
-               branch of the base repository, on that branch's code unless it
-               checks out the pull request, so it may be unable to fail because
-               of the pull request (AGENTS.md 2.2). An entry in TARGET_OK, with
-               the reason, accepts it, and only it
+               pull_request_target jobs, and no push run on some branch other
+               than the default, and no deployment or deployment_status run,
+               produces it; where one does, TARGET-ONLY gives way to that
+               DUPLICATE. A pull_request_target job runs the workflow from the
+               default branch of the base repository, on that branch's code
+               unless it checks out the pull request, so it may be unable to
+               fail because of the pull request (AGENTS.md 2.2). An entry in
+               TARGET_OK, with the reason, accepts it, and only it
   STALE-ALLOW  an ALLOW entry matches no job any more
 
 pull_request_target counts as a pull request event: its check runs carry the
@@ -62,6 +71,16 @@ pull_request_target job that is meant to gate nothing, such as a labeller,
 belongs in ALLOW with that reason. ALLOW silences only UNGATED: a job in it
 still produces its contexts, and if one is required it is checked as usual.
 
+pull_request_review counts as a pull request event too: its check runs carry
+the pull request's head sha, a fork's included, and appear in that head's
+status check rollup (kindspec/.github#22). It takes no branch or path filter;
+one that has any key besides `types` is not evaluated. deployment and
+deployment_status runs carry the deployed commit's sha, and appear in a pull
+request's rollup when that commit is its head (kindspec/.github#22). They run
+only when something deploys the head, which no workflow file shows, so they are
+not pull request events: they count as second producers of a required context,
+and a required check that only they produce is not evaluated.
+
 Exit 0 clean, 1 on any finding, 2 when something could not be evaluated: no
 repositories read; an API or authentication failure; fewer repositories listed
 than the org reports, or a private count this token cannot read; a repository
@@ -75,7 +94,9 @@ way (it decides by finding a branch the filter admits, or by enumerating every
 branch it could), in its own workflow or in another whose job has the same
 context; or a job of another workflow that runs on such a push, or on a pull
 request into the default branch, and whose context is not known (matrix,
-expression or block name, or a call not read).
+expression or block name, or a call not read), or that runs on deployment or
+deployment_status and whose context is not known; or a required check that only
+deployment or deployment_status jobs produce.
 A run that could not look must not report a pass.
 
 A job that calls a reusable workflow (`uses: ./.github/workflows/F.yml`, or
@@ -126,8 +147,13 @@ ACTIONS_APP_ID = 15368  # GitHub Actions; a context from another app is not a wo
 DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unreported
 # Events whose check runs attach to a pull request's head commit and count toward its
 # required checks. pull_request_target runs the workflow from the default branch of
-# the base repository, but its check runs still carry the head sha (.github#20).
-PR_EVENTS = ("pull_request", "pull_request_target")
+# the base repository, but its check runs still carry the head sha (.github#20), as
+# pull_request_review's do (.github#22).
+PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review")
+REVIEW_TYPES = ("submitted", "edited", "dismissed")  # pull_request_review's, none a push
+# Events whose check runs attach to the deployed commit, a pull request head only when
+# something deploys it (.github#22): second producers, never a check's only one.
+DEPLOY_EVENTS = ("deployment", "deployment_status")
 SAMPLES = 4096  # names tried per branch filter pattern; a pattern with more is not enumerated
 GH = ["gh"]
 
@@ -425,6 +451,10 @@ def _events(workflow):
 
 def pr_events(on, branch):
     """The events in PR_EVENTS on which the workflow runs for a pull request into branch."""
+    review = on.get("pull_request_review")
+    if isinstance(review, dict) and set(review) - {"types"}:
+        # GitHub documents only types for it; a filter here cannot be read either way
+        raise Unsupported(f"pull_request_review {sorted(set(review) - {'types'})}: not documented")
     return [e for e in PR_EVENTS if e in on and _branch_runs(on[e], branch)]
 
 
@@ -434,11 +464,17 @@ def pr_admits(on, branch):
     return "on " + " and ".join(events) if events else None
 
 
+def deploy_admits(on, branch):
+    """Why the workflow reports on a deployed commit, or None; for producers()."""
+    events = [e for e in DEPLOY_EVENTS if e in on]
+    return "on " + " and ".join(events) if events else None
+
+
 def pr_trigger(workflow, branch):
     """(events that reach a PR into branch, [(finding, event, types)], why not).
 
     An event is blocked by a path filter, or by `types:` without opened and
-    synchronize. The blocks are findings only when the unfiltered events together
+    synchronize; pull_request_review always is. The blocks are findings only when the unfiltered events together
     do not cover opened and synchronize: otherwise every head is still reported.
     """
     on = _events(workflow)
@@ -454,6 +490,9 @@ def pr_trigger(workflow, branch):
         types = config.get("types")
         if types is not None:
             types = set(map(str, types if isinstance(types, list) else [types]))
+        if event == "pull_request_review":
+            blocked.append(("TRIGGER", event, sorted(REVIEW_TYPES if types is None else types)))
+            continue
         if {"paths", "paths-ignore"} & set(config):
             blocked.append(("PATH-FILTER", event, None))
         else:
@@ -531,7 +570,7 @@ def producers(data, branch, admits):
     """The contexts each active workflow produces where admits(on, branch) gives a reason.
 
     With push_duplicates, that is on push to a branch other than branch; with pr_admits,
-    on a pull request into branch.
+    on a pull request into branch; with deploy_admits, on a deployed commit.
     Returns ({context: [(path, producing job, why)]}, [(path, context, why not evaluated)]),
     where a context of None could be any. A job's `if:` does not matter: a skipped job
     still reports its context. A workflow that cannot be read is refused by evaluate.
@@ -615,6 +654,7 @@ def evaluate(snapshot, allow, target_ok=()):
         produced, elsewhere, blind, pr_events_of = set(), {}, False, {}
         on_push, push_unknown = producers(data, branch, push_duplicates)
         on_pr, pr_unknown = producers(data, branch, pr_admits)
+        on_deploy, deploy_unknown = producers(data, branch, deploy_admits)
         for path, text in sorted(data["workflows"].items()):
             stats["workflows"] += 1
             state = data["workflow_state"].get(path)
@@ -649,6 +689,7 @@ def evaluate(snapshot, allow, target_ok=()):
                         jobs[job_id] = (*job[:4], unresolved, job[5])
                     else:
                         calls[job_id] = called
+            own = {}  # context: the first job of this workflow that produces it
             for job_id, context, _, _, unresolved, _ in jobs.values():
                 where = f"{repo}: {path}: job '{job_id}'"
                 allowed = (repo, path, job_id) in allow
@@ -673,6 +714,14 @@ def evaluate(snapshot, allow, target_ok=()):
                     stats["pr_jobs"] += 1
                     produced.add(context)
                     pr_events_of.setdefault(context, set()).update(events)
+                    mine = unit.removeprefix(f"{repo}: {path}: ")
+                    twin = own.setdefault(context, mine)
+                    if twin != mine and context in required:
+                        findings.append(
+                            f"DUPLICATE    {unit} is required, and {twin} of the same workflow "
+                            f"also produces '{context}', so a pull request head carries it twice "
+                            "from one suite and the merge takes either"
+                        )
                     if context not in required:
                         if not allowed:
                             findings.append(
@@ -723,6 +772,24 @@ def evaluate(snapshot, allow, target_ok=()):
                             f"{unit}: not evaluated for a pull request producer in another "
                             "workflow: " + "; ".join(doubts)
                         )
+                    # this workflow's or another's: either one's run is a second suite
+                    for other, job, why in on_deploy.get(context, []):
+                        findings.append(
+                            f"DUPLICATE    {unit} is required, and {other}: {job} also "
+                            f"produces '{context}' ({why}), which reports on a pull request "
+                            "head whenever that head is deployed, so it can carry it from two "
+                            "suites and the merge takes either"
+                        )
+                    doubts = [
+                        f"{other}: {why}"
+                        for other, c, why in deploy_unknown
+                        if other != path and c in (None, context)
+                    ]
+                    if doubts:
+                        incomplete.append(
+                            f"{unit}: not evaluated for a deployment producer in another "
+                            "workflow: " + "; ".join(doubts)
+                        )
                     for kind, event, types in blocked:
                         if kind == "PATH-FILTER":
                             findings.append(
@@ -749,6 +816,12 @@ def evaluate(snapshot, allow, target_ok=()):
                 incomplete.append(
                     f"{repo}: required '{context}' comes from app {app}, not a workflow"
                 )
+            elif context not in produced and context in on_deploy:
+                incomplete.append(
+                    f"{repo}: required '{context}' is produced only on deployment or "
+                    "deployment_status, which report on a pull request head only when "
+                    "something deploys it; the workflow files do not say whether every head is"
+                )
             elif context not in produced and blind:
                 incomplete.append(
                     f"{repo}: required '{context}' not matched, and a job above was not read"
@@ -759,10 +832,12 @@ def evaluate(snapshot, allow, target_ok=()):
                     f"ORPHANED     {repo}: required check '{context}' is produced by no "
                     f"job that reports on a pull request into '{branch}'{note}"
                 )
-            # a push run on the pull request's branch tests its code; that is DUPLICATE
+            # gives way to DUPLICATE wherever push admits a branch other than the default,
+            # or a deployment run produces it, whether or not that run tests this head
             elif (
                 pr_events_of.get(context) == {"pull_request_target"}
                 and context not in on_push
+                and context not in on_deploy
                 and (repo, context) not in target_ok
             ):
                 findings.append(
@@ -1725,6 +1800,149 @@ def selftest():
             inc1,
         ),
     ]
+    # pull_request_review, deployment, deployment_status, and two jobs of one workflow (#22)
+    review, deploy, status = (
+        f"  {e}:\n" for e in ("pull_request_review", "deployment", "deployment_status")
+    )
+    pr_review = target(review)
+    again = "  again:\n    name: check\n    runs-on: x\n"
+    matrix = "    strategy:\n      matrix:\n        v: [1]\n"
+    deploy_caller = f"on: deployment\njobs:\n  kind:\n    uses: {local}\n"
+    kind_twin = "  twin:\n    name: kind / conformance\n    runs-on: x\n"
+    more_producers = [
+        # pull_request_review is a pull request event, that never covers every head
+        ("other pull_request_review workflow", beside(pr_review), ["DUPLICATE", "TRIGGER"]),
+        (
+            "other pull_request_review workflow with types",
+            beside(target(review + "    types: [submitted]\n")),
+            ["DUPLICATE", "TRIGGER"],
+        ),
+        (
+            "one workflow on pull_request and pull_request_review",
+            repo(target("  pull_request:\n" + review)),
+            dup,
+        ),
+        ("required check only on pull_request_review", repo(pr_review), ["TRIGGER"]),
+        (
+            "required check only on pull_request_review, list form",
+            repo("on: [pull_request_review]\njobs:\n  check:\n    runs-on: x\n"),
+            ["TRIGGER"],
+        ),
+        ("unrequired pull_request_review job", beside(target(review, job="lint")), ["UNGATED"]),
+        (
+            "pull_request_review clears target-only",
+            beside(pr_review, pr_target),
+            ["DUPLICATE", "TRIGGER"],
+        ),
+        # deployment and deployment_status: a second producer whenever the head is deployed
+        ("other deployment workflow", beside(target(deploy)), dup),
+        ("other deployment_status workflow", beside(target(status)), dup),
+        (
+            "other deployment_status workflow, scalar on:",
+            beside("on: deployment_status\njobs:\n  check:\n    runs-on: x\n"),
+            dup,
+        ),
+        (
+            "deployment job named by name:",
+            beside(target(deploy, job="p", body="    name: check\n")),
+            dup,
+        ),
+        (
+            "one workflow on pull_request and deployment_status",
+            repo(target("  pull_request:\n" + status)),
+            dup,
+        ),
+        (
+            "called workflow under deployment in another workflow",
+            repo(
+                caller(local), kind, more={".github/workflows/k.yml": conf, "p.yml": deploy_caller}
+            ),
+            dup,
+        ),
+        ("deployment clears target-only", beside(target(status), pr_target), dup),
+        # two jobs of one workflow
+        ("two jobs of one workflow", repo(_PR.format(job="check") + again), dup),
+        (
+            "three jobs of one workflow give one finding per extra job",
+            repo(_PR.format(job="check") + again + again.replace("again", "more")),
+            ["DUPLICATE", "DUPLICATE"],
+        ),
+        (
+            "a job and a called job of one workflow",
+            repo(caller(local) + kind_twin, kind, more={".github/workflows/k.yml": conf}),
+            dup,
+        ),
+        # negative controls
+        (
+            "other pull_request_review job with a different name",
+            beside(target(review, job="lint"), None, lint),
+            ["TRIGGER"],
+        ),
+        (
+            "disabled pull_request_review workflow",
+            state_of(beside(pr_review), "p.yml", "disabled_manually"),
+            [],
+        ),
+        (
+            "disabled_inactivity pull_request_review workflow",
+            state_of(beside(pr_review), "p.yml", "disabled_inactivity"),
+            [],
+        ),
+        (
+            "required check only on an inactive pull_request_review workflow",
+            repo(pr_review, state="disabled_inactivity"),
+            ["ORPHANED"],
+        ),
+        ("other deployment job with a different name", beside(target(deploy, job="lint")), []),
+        (
+            "disabled deployment workflow",
+            state_of(beside(target(deploy)), "p.yml", "disabled_manually"),
+            [],
+        ),
+        (
+            "disabled_inactivity deployment_status workflow",
+            state_of(beside(target(status)), "p.yml", "disabled_inactivity"),
+            [],
+        ),
+        (
+            "required check only on an inactive deployment_status workflow",
+            repo(target(status), state="disabled_inactivity"),
+            ["ORPHANED"],
+        ),
+        (
+            "two jobs of one workflow with different names",
+            repo(_PR.format(job="check") + again.replace("check", "lint"), lint),
+            [],
+        ),
+        (
+            "two jobs of one workflow share an unrequired context",
+            repo(
+                _PR.format(job="check")
+                + again.replace("check", "lint")
+                + again.replace("again", "more").replace("check", "lint")
+            ),
+            ["UNGATED", "UNGATED"],
+        ),
+        (
+            "two jobs of one workflow, that workflow disabled",
+            state_of(beside(pr_plain + again), "p.yml", "disabled_manually"),
+            [],
+        ),
+        # cannot be decided: refused, never passed
+        ("required check only on deployment_status is refused", repo(target(status)), inc1),
+        ("required check only on deployment is refused", repo(target(deploy)), inc1),
+        ("other deployment matrix job is refused", beside(target(deploy, body=matrix)), inc1),
+        (
+            "pull_request_review with a branch filter is refused",
+            repo(target(review + "    branches: [main]\n")),
+            inc2,
+        ),
+        (
+            "other pull_request_review with a branch filter is refused",
+            beside(target(review + "    branches: [main]\n")),
+            inc2,
+        ),
+    ]
     # ALLOW neither hides a pull request pair nor counts as a producer's absence
     first = {("r", "a.yml", "check"): "test"}
     mine = {("r", "w.yml", "check"): "test"}
@@ -2070,6 +2288,7 @@ def selftest():
         *((label, snap, want, None) for label, snap, want in duplicate),
         *((label, snap, want, None) for label, snap, want in cross),
         *((label, snap, want, None) for label, snap, want in pr_pair),
+        *((label, snap, want, None) for label, snap, want in more_producers),
         *pr_allow,
     ]
     bad = 0
