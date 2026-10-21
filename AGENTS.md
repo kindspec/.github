@@ -103,15 +103,17 @@ rewritten or the branch deleted, and only squash merges are allowed.
                 kind / conformance
     kindkit     check, kind / conformance                                  yes
     blockspec   conformance, reference                                     yes
-    nodespec    none — no workflows of its own yet                         n/a
+    nodespec    check                                                      yes
     research    none — no workflows of its own yet                         n/a
     .github     none — its one workflow never runs on a pull request       n/a
 
 **"Strict" — branch must be up to date with `main` before merging — applies only
-to `rowspec`, `kindkit` and `blockspec`.** It is a parameter *of* the
+to `rowspec`, `kindkit`, `blockspec` and `nodespec`.** It is a parameter *of* the
 required-checks rule, so a repository with no required checks has no up-to-date
-requirement either. Say "three of six", not "all", and add it when the others
-gain workflows.
+requirement either. Say "four of six", not "all", and add it when the others
+gain workflows. Re-read on 2026-10-21 with `gh api
+repos/kindspec/<repo>/rules/branches/main`, which shows the configuration, not
+a rejection.
 
 **CodeQL runs on every repository** through GitHub's default setup, and is
 deliberately **not** required. Its check names are generated from language
@@ -181,13 +183,17 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   (kindspec/rowspec#43). The second producer can also be a `push` job in a
   different workflow with the same name. Restrict `push` to the default branch,
   or to tags. It can also run on the pull request itself: a job of the same
-  name in another workflow on `pull_request` or `pull_request_target`, or one
-  workflow on both. The audit reports each of these as DUPLICATE: `push` with
+  name in another workflow on `pull_request`, `pull_request_target` or
+  `pull_request_review`, or one workflow on two of them. It can be a
+  `deployment` or `deployment_status` job, whose check runs land on any head
+  that something deploys. And it can be a second job of the same name in the
+  same workflow. The audit reports each of these as DUPLICATE: `push` with
   no branch filter, a `branches-ignore` that leaves some other branch, or
-  `branches` that match one; or a second pull request producer into the
-  default branch, whether or not `ALLOW` names either job. It refuses, exit 2,
-  a filter it cannot settle either way, and a job elsewhere whose name it
-  cannot resolve.
+  `branches` that match one; a second pull request or deployment producer,
+  whether or not `ALLOW` names either job; or two jobs of one workflow. It
+  refuses, exit 2, a filter it cannot settle either way, a job elsewhere whose
+  name it cannot resolve, and a required check that only deployment jobs
+  produce, since no workflow file says whether every head is deployed.
 - **A check that only `pull_request_target` runs may be unable to fail.** Its
   check runs land on the pull request's head like `pull_request`'s do, and
   GitHub's documentation says they satisfy a required check
@@ -197,11 +203,11 @@ Each is the pattern in §2.2, one layer up in the infrastructure.
   unless it checks out the pull request, so the pull request can neither change
   the job nor, by default, make it fail — §2.2, one layer up. The audit reports
   a required check whose only pull request producers are `pull_request_target`
-  jobs as TARGET-ONLY, unless a `push` run on the pull request's branch also
-  produces it (that run tests the pull request's code, and is a DUPLICATE). It
-  cannot tell whether the job checks out the pull request, so accepting one is
-  a decision: add `(repo, context)` to the script's `TARGET_OK`, with the
-  reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
+  jobs as TARGET-ONLY, unless a `push` that admits some branch other than the
+  default, or a deployment job, also produces it: TARGET-ONLY then gives way
+  to that DUPLICATE. It cannot tell whether the job checks out the pull
+  request, so accepting one is a decision: add `(repo, context)` to the
+  script's `TARGET_OK`, with the reason. `ALLOW` does not accept it: `ALLOW` only silences UNGATED, for a job
   that gates nothing.
 
 **Verify a rule by watching it reject, not by reading its configuration.**

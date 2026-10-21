@@ -6,7 +6,9 @@ Org-level defaults for [kindspec](https://github.com/kindspec).
   requests gates no merge, a required check never reports or can be skipped,
   or a required check also comes from a `push` run on the pull request's
   branch, in the same workflow or another, or from a second workflow that runs
-  on the pull request (`pull_request` or `pull_request_target`), or comes only
+  on the pull request (`pull_request`, `pull_request_target` or
+  `pull_request_review`) or on `deployment` or `deployment_status`, or from a
+  second job of the same workflow, or comes only
   from `pull_request_target`, which runs the default branch's code (accepted
   per check through `TARGET_OK`); its mutation
   sweep is `scripts/sweep_check_required_checks.py`.
