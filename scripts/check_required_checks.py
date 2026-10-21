@@ -2984,7 +2984,9 @@ def selftest():
 
     # an always() job that tests no result says so, not "job-level if:"
     f, inc, _ = evaluate(repo(gate("always()", step="echo ok")), {})
-    got = [x.split()[0] for x in f] + ["?"] * (not any(UNCHECKED in x for x in f))
+    got = [x.split()[0] for x in f] + ["?"] * (
+        not any("no one-line run: step tests" in x for x in f)
+    )
     report(
         "always() without a result test names why",
         got,
