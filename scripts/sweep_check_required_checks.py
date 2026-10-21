@@ -623,6 +623,21 @@ MUTANTS = [
         "            own = {}  # context: the first job of this workflow that produces it\n",
         "            own = own if 'own' in dir() else {}\n",
     ),
+    (
+        "--load drops target_ok",
+        "    return evaluate(json.load(fh), ALLOW, TARGET_OK)\n",
+        "    return evaluate(json.load(fh), ALLOW)\n",
+    ),
+    (
+        "live run drops target_ok",
+        "    return (*evaluate(snapshot, ALLOW, TARGET_OK), skipped)\n",
+        "    return (*evaluate(snapshot, ALLOW), skipped)\n",
+    ),
+    (
+        "live run drops its api",
+        "collect(org, public_only, api)",
+        "collect(org, public_only)",
+    ),
 ]
 
 TIMEOUT = 30  # seconds per mutant; the self-test itself takes well under one

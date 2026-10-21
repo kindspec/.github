@@ -125,6 +125,7 @@ it cannot tell when the token cannot see the org's private count.
 
 import argparse
 import base64
+import io
 import itertools
 import json
 import re
@@ -983,16 +984,21 @@ def _fetch_call(uses, api):
     return base64.b64decode(blob["content"]).decode()
 
 
-def run_live(org, public_only, save=None):
+def run_live(org, public_only, save=None, api=gh):
     """Collect and evaluate. Returns (findings, incomplete, stats, skipped)."""
     try:
-        snapshot, skipped = collect(org, public_only)
+        snapshot, skipped = collect(org, public_only, api)
     except Unreadable as e:
         return [], [str(e)], {"repos": 0, "workflows": 0, "pr_jobs": 0, "required": 0}, None
     if save:
         with open(save, "w") as fh:
             json.dump(snapshot, fh, indent=1, sort_keys=True)
     return (*evaluate(snapshot, ALLOW, TARGET_OK), skipped)
+
+
+def run_saved(fh):
+    """Evaluate a snapshot that --save wrote. Returns (findings, incomplete, stats)."""
+    return evaluate(json.load(fh), ALLOW, TARGET_OK)
 
 
 # --- self-test: every finding and every refusal must be seen to fire ---
@@ -2461,7 +2467,41 @@ def selftest():
             report(label, ["INCOMPLETE"] * len(inc) + f, exit_code(f, inc), ["INCOMPLETE"], 2)
     finally:
         GH = saved
-    total = len(cases) + len(collection) + 5
+
+    # --load and the live run each pass TARGET_OK; without the entry, both report it
+    global TARGET_OK
+    saved = TARGET_OK, GH
+    GH = ["/nonexistent/gh"]  # an entry point that drops its api reads nothing real
+    target_repo = {
+        **org([pub], private=0),
+        "repos/o/p/contents/.github/workflows": [
+            {"type": "file", "name": "t.yml", "path": ".github/workflows/t.yml"}
+        ],
+        "repos/o/p/contents/.github/workflows/t.yml": blob(pr_target),
+        "repos/o/p/actions/workflows": {
+            "workflows": [{"path": ".github/workflows/t.yml", "state": "active"}]
+        },
+        "repos/o/p/rules/": [
+            {"type": "required_status_checks", "parameters": {"required_status_checks": _CHECK}}
+        ],
+    }
+    try:
+        for accepted, want in ((False, ["TARGET-ONLY"]), (True, [])):
+            TARGET_OK = {("r", "check"): "test", ("p", "check"): "test"} if accepted else {}
+            for label, entry in (
+                ("--load", lambda: run_saved(io.StringIO(json.dumps(repo(pr_target))))),
+                ("live", lambda: run_live("o", False, api=_fake_api(target_repo))[:3]),
+            ):
+                try:
+                    f, inc, _ = entry()
+                    got = [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc)
+                    code = exit_code(f, inc)
+                except Exception as e:  # noqa: BLE001
+                    got, code = [f"CRASH {type(e).__name__}"], -1
+                report(f"{label} with TARGET_OK {accepted}", got, code, want, len(want))
+    finally:
+        TARGET_OK, GH = saved
+    total = len(cases) + len(collection) + 9
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 
@@ -2479,7 +2519,7 @@ def main():
     skipped = 0
     if args.load:
         with open(args.load) as fh:
-            findings, incomplete, stats = evaluate(json.load(fh), ALLOW, TARGET_OK)
+            findings, incomplete, stats = run_saved(fh)
     else:
         findings, incomplete, stats, skipped = run_live(args.org, args.public_only, args.save)
     for line in findings:
