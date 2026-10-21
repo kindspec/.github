@@ -513,7 +513,7 @@ MUTANTS = [
     ),
     (
         "allowlisted unresolved job refused",
-        "                if unresolved and allowed:\n",
+        "                if unresolved and allowed and not required:\n",
         "                if False:\n",
     ),
     ("target_ok ignored", "                and (repo, context) not in target_ok\n", ""),
@@ -686,8 +686,8 @@ MUTANTS = [
     ),
     (
         "always() not recognised",
-        'has_if = ALWAYS if "if" in job and _ALWAYS.fullmatch(str(job["if"])) else "if" in job',
-        'has_if = "if" in job',
+        "            has_if = ALWAYS\n",
+        "            pass\n",
     ),
     (
         "always() matched as a prefix",
@@ -711,8 +711,8 @@ MUTANTS = [
     ("expression-named matrix narrowed", '                and "${{" not in context\n', ""),
     (
         "matrix form matches the bare name",
-        r"""re.escape(context) + r" \(.+\)")""",
-        r"""re.escape(context) + r"( \(.+\))?")""",
+        r"""re.escape(context) + r" \(.*\)")""",
+        r"""re.escape(context) + r"( \(.*\))?")""",
     ),
     (
         "matrix narrowed whatever is required",
@@ -741,6 +741,66 @@ MUTANTS = [
         "any deployment doubt refuses an orphan",
         "_could_be(c, context) for _, c, _ in deploy_unknown",
         "True for _, c, _ in deploy_unknown",
+    ),
+    # review of #28
+    ("block-named matrix narrowed", '                and context != "<block>"\n', ""),
+    ("exclude counts as a key", 'if k not in ("include", "exclude")', 'if k != "include"'),
+    ("matrix form not escaped", "re.escape(context) + r", "context + r"),
+    (
+        "matrix form needs a value",
+        r"""re.escape(context) + r" \(.*\)")""",
+        r"""re.escape(context) + r" \(.+\)")""",
+    ),
+    (
+        "allowlisted unresolved job skipped whatever is required",
+        "if unresolved and allowed and not required:",
+        "if unresolved and allowed:",
+    ),
+    (
+        "allowlisted matrix needs no aggregator",
+        "                    elif not gate:\n",
+        "                    elif False:\n",
+    ),
+    (
+        "unrequired aggregator gates",
+        "and job_id in j[3] and j[1] in required",
+        "and job_id in j[3]",
+    ),
+    (
+        "aggregator need not be always()",
+        "if j[2] == ALWAYS and job_id in j[3]",
+        "if job_id in j[3]",
+    ),
+    (
+        "aggregator need not need the matrix",
+        "and job_id in j[3] and j[1] in required",
+        "and j[1] in required",
+    ),
+    (
+        "always() steps not read",
+        'if has_if and _ALWAYS.fullmatch(str(job["if"])) and _checks_needs(job, needs):',
+        'if has_if and _ALWAYS.fullmatch(str(job["if"])):',
+    ),
+    (
+        "always() with no needs accepted",
+        "    if not needs or not isinstance(steps, list):",
+        "    if not isinstance(steps, list):",
+    ),
+    (
+        "conditional step reads the result",
+        'not {"if", "continue-on-error"} & set(step)',
+        'not {"continue-on-error"} & set(step)',
+    ),
+    (
+        "continue-on-error step reads the result",
+        'not {"if", "continue-on-error"} & set(step)',
+        'not {"if"} & set(step)',
+    ),
+    ("one need's result suffices", "    return all(\n", "    return any(\n"),
+    (
+        "result reference read as a substring",
+        r'rf"\bneeds\.{re.escape(n)}\.result\b"',
+        r'rf"needs\.{re.escape(n)}"',
     ),
 ]
 
