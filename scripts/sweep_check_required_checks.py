@@ -639,6 +639,12 @@ MUTANTS = [
         "collect(org, public_only)",
     ),
     # review of #27
+    ("paths on review not refused", 'set(review) - {"types"}', 'set(review) - {"types", "paths"}'),
+    (
+        "review with types read as pull_request types",
+        'else [types]))\n        if event == "pull_request_review":\n',
+        'else [types]))\n        if event == "pull_request_review" and types is None:\n',
+    ),
     (
         "unread deployment job does not refuse an orphan",
         "            elif context not in produced and deploy_unknown:\n",
@@ -658,6 +664,19 @@ MUTANTS = [
         "covering ignores blocks",
         "            if events and not blocked:\n",
         "            if events:\n",
+    ),
+    (
+        "main --load drops target_ok",
+        "            findings, incomplete, stats = run_saved(fh)\n",
+        "            findings, incomplete, stats = evaluate(json.load(fh), ALLOW)\n",
+    ),
+    (
+        "main live bypasses run_live",
+        "        findings, incomplete, stats, skipped = run_live(args.org, args.public_only, args.save)\n",
+        (
+            "        snapshot, skipped = collect(args.org, args.public_only)\n"
+            "        findings, incomplete, stats = evaluate(snapshot, ALLOW)\n"
+        ),
     ),
 ]
 

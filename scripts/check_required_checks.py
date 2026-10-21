@@ -125,12 +125,14 @@ it cannot tell when the token cannot see the org's private count.
 
 import argparse
 import base64
+import contextlib
 import io
 import itertools
 import json
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 
 # Jobs that run on pull requests but deliberately gate nothing, as
@@ -1038,6 +1040,24 @@ _CHECK = [{"context": "check", "integration_id": ACTIONS_APP_ID}]
 
 def _on(trigger):
     return f"on:\n{trigger}jobs:\n  check:\n    runs-on: x\n"
+
+
+# A stand-in for `gh`: `python -c _GH_STUB RESPONSES api --paginate PATH`, read as _fake_api
+_GH_STUB = """
+import json, sys
+responses, path = json.loads(sys.argv[1]), sys.argv[-1]
+base = path.split("?")[0]
+if "?" in path and path in responses:
+    base = path
+keys = [k for k in responses if k == base] or sorted(
+    (k for k in responses if base.startswith(k)), key=len, reverse=True
+)
+value = responses[keys[0]] if keys else None
+if value is None:
+    sys.stderr.write("HTTP 404")
+    sys.exit(1)
+print(json.dumps(value))
+"""
 
 
 def _fake_api(responses):
@@ -1975,6 +1995,11 @@ def selftest():
             beside(target(review + "    branches: [main]\n")),
             inc2,
         ),
+        (
+            "pull_request_review with a paths filter is refused",
+            repo(target(review + "    paths: [x]\n")),
+            inc2,
+        ),
         # a required check only an unreadable deployment job could produce (review of #27)
         (
             "required check only from a deployment matrix job is refused",
@@ -2006,6 +2031,12 @@ def selftest():
             "pull_request_review beside a pull_request that misses heads",
             beside(pr_review, target("  pull_request:\n    types: [labeled]\n")),
             ["DUPLICATE", "TRIGGER", "TRIGGER"],
+        ),
+        # pull_request types on a review trigger are not pull_request's
+        (
+            "pull_request_review types naming opened and synchronize never cover",
+            repo(target(review + "    types: [opened, synchronize]\n")),
+            ["TRIGGER"],
         ),
         # a job in another workflow is a pair, never a same-workflow twin
         (
@@ -2564,9 +2595,30 @@ def selftest():
                 except Exception as e:  # noqa: BLE001
                     got, code = [f"CRASH {type(e).__name__}"], -1
                 report(f"{label} with TARGET_OK {accepted}", got, code, want, len(want))
+            # and main() passes them on: --load from a file, live through a stub gh
+            with tempfile.TemporaryDirectory() as tmp:
+                snap = f"{tmp}/snap.json"
+                with open(snap, "w") as fh:
+                    json.dump(repo(pr_target), fh)
+                stub = [sys.executable, "-I", "-c", _GH_STUB, json.dumps(target_repo)]
+                for label, argv, gh_cmd in (
+                    ("main --load", ["--load", snap], ["/nonexistent/gh"]),
+                    ("main live", ["--org", "o"], stub),
+                ):
+                    GH, argv_saved, out = gh_cmd, sys.argv, io.StringIO()
+                    sys.argv = ["check_required_checks.py", *argv]
+                    try:
+                        with contextlib.redirect_stdout(out):
+                            code = main()
+                        got = [line.split()[0] for line in out.getvalue().splitlines()[:-1]]
+                    except Exception as e:  # noqa: BLE001
+                        got, code = [f"CRASH {type(e).__name__}"], -1
+                    finally:
+                        sys.argv = argv_saved
+                    report(f"{label} with TARGET_OK {accepted}", got, code, want, len(want))
     finally:
         TARGET_OK, GH = saved
-    total = len(cases) + len(collection) + 9
+    total = len(cases) + len(collection) + 13
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 
