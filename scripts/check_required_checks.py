@@ -25,7 +25,18 @@ run on every pull request and gate nothing (kindspec/.github#3). This fails when
                success: it has a job-level `if:`, or something in its `needs:`
                chain has one or is not itself required. When the skipped job calls
                a reusable workflow, its '<caller> / <called>' contexts never
-               report at all, and the merge waits on them instead
+               report at all, and the merge waits on them instead. A job-level
+               `if:` of exactly always() or ${{ always() }} cannot be skipped,
+               but such a job runs, and passes, whatever its needs did unless a
+               step fails it. So it counts as not skippable only when it has
+               needs, no job-level continue-on-error, and, for each need, a
+               one-line run: step with no `if:`, no continue-on-error and no
+               `||` that compares ${{ needs.<n>.result }} for equality with
+               success. A `run: |` or `run: >` block is not read. This checks
+               the comparison, not the rest of the step. Otherwise, and for
+               `always() && x`, success() and !cancelled(), it can be skipped,
+               and the finding says which. always() is matched as written: GitHub's documentation
+               says string comparison ignores case, not that function names do
   PATH-FILTER  a required job is path-filtered, so it never reports on an
                unrelated pull request and blocks it forever (AGENTS.md 3.2).
                With both events, on the same terms as TRIGGER
@@ -90,7 +101,16 @@ whose rules or workflow states cannot be read (rulesets on a private repository
 need a paid plan); a workflow the parser cannot read or GitHub would reject
 (a job with neither runs-on nor uses, or uses with runs-on or steps, a
 non-mapping job); a matrix,
-expression- or block-named job whose context names this script does not expand;
+expression- or block-named job whose context names this script does not expand,
+except a matrix job with a literal name and a key of a non-empty list and no
+`uses:`, which reports only '<name> (<values>)': unless a required context has
+that form it produces none, and is UNGATED like any job that gates nothing. An
+ALLOW entry for one holds only while a required always() job that is not
+skippable needs it. That naming is confirmed only on single-key, two-value
+literal matrices (rowspec's and nodespec's Python legs). If it is wrong for
+some other shape and a leg reports a required context, that context is
+ORPHANED when nothing else produces it, which is loud; a second producer of a
+context that something else does produce would not be;
 or, for a required job, a push branch filter this script cannot settle either
 way (it decides by finding a branch the filter admits, or by enumerating every
 branch it could), in its own workflow or in another whose job has the same
@@ -141,9 +161,22 @@ import urllib.parse
 # Jobs that run on pull requests but deliberately gate nothing, as
 # (repo, workflow path, job id): reason. Jobs that never run on a pull request
 # (rowspec's release.yml: gate, build, publish run on v* tags) are excluded by
-# their triggers and need no entry here. An entry only silences UNGATED: a
-# required job in ALLOW is checked like any other.
-ALLOW = {}
+# their triggers and need no entry here. An entry only silences UNGATED, for a
+# job that produces no required context: a job in ALLOW that produces, or could
+# produce, a required check is checked, or refused, like any other. An entry for
+# a literal-named matrix holds only while a required always() job that checks
+# its result needs it.
+ALLOW = {
+    ("nodespec", ".github/workflows/check.yml", "check"): (
+        "the Python legs, 'check (3.11)' and 'check (3.12)'; the required 'check' is "
+        "check-all, which runs always() and fails unless needs.check.result is success"
+    ),
+    ("rowspec", ".github/workflows/check.yml", "conformance"): (
+        "the Python legs, 'conformance (3.11)' and 'conformance (3.12)'; the required "
+        "'conformance' is conformance-all, which runs always() and fails unless "
+        "needs.conformance.result is success"
+    ),
+}
 
 # Required checks accepted although only pull_request_target produces them, as
 # (repo, context): reason, such as "the job checks out the pull request head".
@@ -155,6 +188,14 @@ DEFAULT_TYPES = {"opened", "synchronize"}  # without both, a PR head can go unre
 # required checks. pull_request_target runs the workflow from the default branch of
 # the base repository, but its check runs still carry the head sha (.github#20), as
 # pull_request_review's do (.github#22).
+MATRIX = "matrix job; contexts are expanded per combination"
+MATRIX_NAMED = "matrix job; it reports '<name> (<values>)' for each combination"
+ALWAYS = "always"  # a job-level `if:` of exactly always(), which cannot be skipped
+UNCHECKED = (  # the same, in a job with no step that fails it when a need did not succeed
+    "job-level if: always(), but no one-line run: step tests that each need's result is "
+    "success, so it passes whatever they did"
+)
+_ALWAYS = re.compile(r"\s*(?:always\(\)|\$\{\{\s*always\(\)\s*\}\})\s*")
 PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review")
 REVIEW_TYPES = ("submitted", "edited", "dismissed")  # pull_request_review's, none a push
 # Events whose check runs attach to the deployed commit, a pull request head only when
@@ -524,15 +565,76 @@ def jobs_of(workflow):
         context = str(job.get("name", job_id))
         unresolved = None
         if isinstance(job.get("strategy"), dict) and "matrix" in job["strategy"]:
-            unresolved = "matrix job; contexts are expanded per combination"
+            matrix = job["strategy"]["matrix"]
+            # a key with a non-empty list puts a value in every combination's name
+            named = (
+                "uses" not in job
+                and "${{" not in context
+                and context != "<block>"
+                and isinstance(matrix, dict)
+                and any(
+                    isinstance(v, list) and v
+                    for k, v in matrix.items()
+                    if k not in ("include", "exclude")
+                )
+            )
+            unresolved = MATRIX_NAMED if named else MATRIX
         elif "${{" in context:
             unresolved = "name is an expression"
         elif context == "<block>":
             unresolved = "name is a block scalar"
         needs = job.get("needs") or []
-        needs = needs if isinstance(needs, list) else [needs]
+        needs = [str(n) for n in (needs if isinstance(needs, list) else [needs])]
         uses = str(job["uses"]) if "uses" in job else None
-        yield job_id, context, "if" in job, [str(n) for n in needs], unresolved, uses
+        has_if = "if" in job
+        if has_if and _ALWAYS.fullmatch(str(job["if"])):
+            has_if = ALWAYS if _checks_needs(job, needs) else UNCHECKED
+        yield job_id, context, has_if, needs, unresolved, uses
+
+
+def _checks_needs(job, needs):
+    """Whether, for each of its needs, an unconditional run: step tests needs.<n>.result.
+
+    A job that runs always() succeeds whatever its needs did unless a step fails it, so
+    only then does it gate them. A step counts when its one-line run compares
+    ${{ needs.<n>.result }} for equality with success, either way round, and holds no
+    `||`; a `run: |` or `run: >` block is not read. This reads the comparison, not what
+    the rest of the step does.
+    """
+    steps = job.get("steps")
+    if not needs or not isinstance(steps, list) or "continue-on-error" in job:
+        return False
+    runs = [
+        str(step.get("run", ""))
+        for step in steps
+        if isinstance(step, dict) and not {"if", "continue-on-error"} & set(step)
+    ]
+    runs = [run for run in runs if "||" not in run]
+
+    def tested(n):
+        result = rf"\$\{{\{{\s*needs\.{re.escape(n)}\.result\s*\}}\}}"
+        success = r"(?:success|'success'|\"success\")"
+        quoted = rf"(?:{result}|'{result}'|\"{result}\")"
+        compare = rf"{quoted}\s*==?\s*{success}(?![\w-])|(?<![\w-]){success}\s*==?\s*{quoted}"
+        return any(re.search(compare, run) for run in runs)
+
+    return all(tested(n) for n in needs)
+
+
+def matrix_form(context, unresolved):
+    """The pattern of every context a literal-named matrix job reports, or None."""
+    if unresolved == MATRIX_NAMED:
+        return re.compile(re.escape(context) + r" \(.*\)")
+    return None
+
+
+def _could_be(c, context):
+    """Whether a producer of unknown context c (None: any; a pattern) could report context."""
+    if c is None:
+        return True
+    if isinstance(c, re.Pattern):
+        return bool(c.fullmatch(context))
+    return c == context
 
 
 # A called workflow's jobs report as '<caller job> / <called job>', each named by
@@ -606,7 +708,8 @@ def producers(data, branch, admits):
                     (f"job '{job_id}' (called job '{c}')", j[1]) for c, j in (called or {}).items()
                 ]
             if unresolved:
-                unknown.append((path, None, f"job '{job_id}': {unresolved}"))
+                form = matrix_form(context, unresolved)
+                unknown.append((path, form, f"job '{job_id}': {unresolved}"))
                 continue
             for job, context in units:
                 if doubt:
@@ -618,6 +721,10 @@ def producers(data, branch, admits):
 
 def _skippable(job_id, jobs, required, calls, seen=frozenset()):
     """Why job_id can be skipped on a pull request, or None."""
+    if jobs[job_id][2] == ALWAYS:
+        return None  # it runs whatever its needs did, and nothing it needs can skip it
+    if jobs[job_id][2] == UNCHECKED:
+        return UNCHECKED
     if jobs[job_id][2]:
         return "job-level if:"
     for n in jobs[job_id][3]:
@@ -710,7 +817,29 @@ def evaluate(snapshot, allow, target_ok=()):
                 allowed = (repo, path, job_id) in allow
                 if allowed:
                     used.add((repo, path, job_id))
-                if unresolved and allowed:
+                form = matrix_form(context, unresolved)
+                if form and not any(form.fullmatch(c) for c in required):
+                    # every context it reports is '<name> (<values>)', and none is required
+                    stats["pr_jobs"] += 1
+                    gate = [
+                        j[0]
+                        for j in jobs.values()
+                        if j[2] == ALWAYS and job_id in j[3] and j[1] in required
+                    ]
+                    if not allowed:
+                        findings.append(
+                            f"UNGATED      {where} runs on pull requests; its matrix contexts "
+                            f"'{context} (...)' are not required checks"
+                        )
+                    elif not gate:
+                        findings.append(
+                            f"UNGATED      {where} is in ALLOW, but no required always() job "
+                            "that checks its result needs it, so its matrix contexts "
+                            f"'{context} (...)' gate nothing"
+                        )
+                    continue
+                if unresolved and allowed and not required:
+                    # nothing it could report is required: it gates nothing
                     stats["pr_jobs"] += 1
                     continue
                 if unresolved:
@@ -770,7 +899,7 @@ def evaluate(snapshot, allow, target_ok=()):
                     doubts = [
                         f"{other}: {why}"
                         for other, c, why in push_unknown
-                        if other != path and c in (None, context)
+                        if other != path and _could_be(c, context)
                     ]
                     if doubts:
                         incomplete.append(
@@ -780,7 +909,7 @@ def evaluate(snapshot, allow, target_ok=()):
                     doubts = [
                         f"{other}: {why}"
                         for other, c, why in pr_unknown
-                        if other != path and c in (None, context)
+                        if other != path and _could_be(c, context)
                     ]
                     if doubts:
                         incomplete.append(
@@ -795,9 +924,11 @@ def evaluate(snapshot, allow, target_ok=()):
                             "head whenever that head is deployed, so it can carry it from two "
                             "suites and the merge takes either"
                         )
-                    # deploy_admits never raises, so each of these is a job of unknown context
+                    # deploy_admits never raises: each is a job of unknown or matrix context
                     doubts = [
-                        f"{other}: {why}" for other, _, why in deploy_unknown if other != path
+                        f"{other}: {why}"
+                        for other, c, why in deploy_unknown
+                        if other != path and _could_be(c, context)
                     ]
                     if doubts:
                         incomplete.append(
@@ -848,11 +979,16 @@ def evaluate(snapshot, allow, target_ok=()):
                     "deployment_status, which report on a pull request head only when "
                     "something deploys it; the workflow files do not say whether every head is"
                 )
-            elif context not in produced and deploy_unknown:
+            elif context not in produced and any(
+                _could_be(c, context) for _, c, _ in deploy_unknown
+            ):
                 # a deployment job whose context is not known could be this one
                 incomplete.append(
                     f"{repo}: required '{context}' not matched, and a deployment job was not "
-                    "read: " + "; ".join(f"{w}: {why}" for w, _, why in deploy_unknown)
+                    "read: "
+                    + "; ".join(
+                        f"{w}: {why}" for w, c, why in deploy_unknown if _could_be(c, context)
+                    )
                 )
             elif context not in produced and blind:
                 incomplete.append(
@@ -1631,9 +1767,10 @@ def selftest():
             inc1,
         ),
         (
-            "push matrix job is refused",
+            # it reports 'check (1)', which no required check is
+            "push matrix job of another form is not refused",
             beside(push_job(body="    strategy:\n      matrix:\n        v: [1]\n")),
-            inc1,
+            [],
         ),
         ("undecided push filter, same name, is refused", beside(push_job(on=filtered)), inc1),
         (
@@ -1840,9 +1977,10 @@ def selftest():
         ("disabled_inactivity push workflow", inactive_push, []),
         # cannot be decided: refused, never passed
         (
-            "other pull_request matrix job is refused",
+            # it reports 'check (1)', which no required check is
+            "other pull_request matrix job of another form is not refused",
             beside(pr_plain + "    strategy:\n      matrix:\n        v: [1]\n"),
-            inc2,
+            ["UNGATED"],
         ),
         (
             "other pull_request filter it cannot read is refused",
@@ -1987,7 +2125,7 @@ def selftest():
         # cannot be decided: refused, never passed
         ("required check only on deployment_status is refused", repo(target(status)), inc1),
         ("required check only on deployment is refused", repo(target(deploy)), inc1),
-        ("other deployment matrix job is refused", beside(target(deploy, body=matrix)), inc1),
+        ("other deployment matrix job of another form", beside(target(deploy, body=matrix)), []),
         (
             "pull_request_review with a branch filter is refused",
             repo(target(review + "    branches: [main]\n")),
@@ -2009,7 +2147,7 @@ def selftest():
             beside(
                 target(deploy, job="only", body=matrix), None, _CHECK + [{"context": "only (1)"}]
             ),
-            inc2,
+            inc1,
         ),
         (
             "required check only from an expression-named deployment job is refused",
@@ -2048,6 +2186,421 @@ def selftest():
             dup,
         ),
     ]
+    # an aggregator that always() runs, and a matrix with a literal name (the 2026-10-20 audit)
+    legs = (
+        "  legs:\n    runs-on: x\n    strategy:\n      matrix:\n        python: ['3.11', '3.12']\n"
+    )
+
+    def gate(cond, needs="legs", more=legs, step=None):
+        step = step or f'test "${{{{ needs.{needs}.result }}}}" = success'
+        return (
+            f"on: pull_request\njobs:\n{more}  check:\n    if: {cond}\n    needs: {needs}\n"
+            f"    runs-on: x\n    steps:\n      - run: {step}\n"
+        )
+
+    lint_job = "  build:\n    name: lint\n    runs-on: x\n"
+    legs_ok = {("r", "w.yml", "legs"): "test"}
+    aggregators = [
+        # always() cannot be skipped, so neither the job nor what it needs makes it skippable
+        ("always() over a required job", repo(gate("always()", "build", lint_job), lint), [], None),
+        ("${{ always() }}", repo(gate("${{ always() }}", "build", lint_job), lint), [], None),
+        ("${{always()}}", repo(gate("${{always()}}", "build", lint_job), lint), [], None),
+        ("quoted 'always()'", repo(gate("'always()'", "build", lint_job), lint), [], None),
+        (
+            # build's own if: is its finding; check is not skippable through it
+            "always() stops the needs walk at a skippable need",
+            repo(gate("always()", "build", lint_job + "    if: x\n"), lint),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "always() stops the needs walk at an unrequired need",
+            repo(gate("always()", "build", lint_job)),
+            ["UNGATED"],
+            None,
+        ),
+        # a literal-named matrix reports '<name> (<values>)': no required context here
+        ("always() aggregator over a matrix", repo(gate("always()")), ["UNGATED"], None),
+        ("always() aggregator over an allowlisted matrix", repo(gate("always()")), [], legs_ok),
+        (
+            "matrix job named by literal name:",
+            repo(gate("always()", more=legs.replace("    runs-on", "    name: test\n    runs-on"))),
+            ["UNGATED"],
+            None,
+        ),
+        # negative controls: these can be skipped
+        (
+            "always() && x",
+            repo(gate("always() && github.actor != 'x'", "build", lint_job), lint),
+            ["CONDITIONAL"],
+            None,
+        ),
+        ("success()", repo(gate("success()", "build", lint_job), lint), ["CONDITIONAL"], None),
+        (
+            "!cancelled()",
+            repo(gate("'!cancelled()'", "build", lint_job), lint),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "${{ always() }} && x",
+            repo(gate("${{ always() }} && x", "build", lint_job), lint),
+            ["CONDITIONAL"],
+            None,
+        ),
+        (
+            "no if: over a matrix still needs what was not evaluated",
+            repo(gate("x", more=legs).replace("    if: x\n", "")),
+            ["UNGATED", "CONDITIONAL"],
+            None,
+        ),
+        (
+            "deployment matrix of another form does not refuse an orphan",
+            beside(target(deploy, body=matrix), _PR.format(job="j")),
+            ["UNGATED", "ORPHANED"],
+            None,
+        ),
+        # the aggregator gates its needs only if a step reads their result (review of #28)
+        (
+            "always() aggregator whose step does not read the result",
+            repo(gate("always()", step="echo ok")),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator that needs nothing",
+            repo(
+                f"on: pull_request\njobs:\n{legs}  check:\n    if: always()\n    runs-on: x\n"
+                "    steps:\n      - run: test x\n"
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator reading the result in a conditional step",
+            repo(gate("always()").replace("      - run:", "      - if: failure()\n        run:")),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator reading the result in a continue-on-error step",
+            repo(
+                gate("always()").replace(
+                    "      - run:", "      - continue-on-error: true\n        run:"
+                )
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator reading the result of one need of two",
+            repo(
+                gate(
+                    "always()",
+                    "[legs, build]",
+                    legs + lint_job,
+                    'test "${{ needs.legs.result }}" = success',
+                ),
+                lint,
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator reading another job's result",
+            repo(gate("always()", step='test "${{ needs.legsx.result }}" = success')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator that only echoes the result",
+            repo(gate("always()", step='echo "${{ needs.legs.result }}"')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing != failure",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" != failure')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing != success",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" != success')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing = successful",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" = successful')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator whose test cannot fail (|| true)",
+            repo(gate("always()", step='test "${{ needs.legs.result }}" = success || true')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing xsuccess = result",
+            repo(gate("always()", step='test xsuccess = "${{ needs.legs.result }}"')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing == 'success'",
+            repo(gate("always()", step="test '${{ needs.legs.result }}' == 'success'")),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing success = result",
+            repo(gate("always()", step='test success = "${{ needs.legs.result }}"')),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing an unquoted result",
+            repo(gate("always()", step='test ${{ needs.legs.result }} = "success"')),
+            [],
+            legs_ok,
+        ),
+        (
+            "always() aggregator with job-level continue-on-error",
+            repo(
+                gate("always()").replace(
+                    "    runs-on: x\n    steps:",
+                    "    runs-on: x\n    continue-on-error: true\n    steps:",
+                )
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator testing in a block run",
+            repo(gate("always()", step='|\n          test "${{ needs.legs.result }}" = success')),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator whose need id holds a regex character",
+            repo(
+                gate("always()", "l.gs", legs.replace("  legs:", "  l.gs:")).replace(
+                    "needs.l.gs.result", "needs.lxgs.result"
+                )
+            ),
+            ["CONDITIONAL", "UNGATED"],
+            {("r", "w.yml", "l.gs"): "test"},
+        ),
+        (
+            "unrequired always() job over an allowlisted matrix",
+            repo(gate("always()").replace("  check:\n", "  check:\n    name: extra\n"), []),
+            ["UNGATED", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "plain aggregator over an allowlisted matrix",
+            repo(gate("always()").replace("    if: always()\n", "")),
+            ["CONDITIONAL", "UNGATED"],
+            legs_ok,
+        ),
+        (
+            "always() aggregator over another job, matrix allowlisted",
+            repo(gate("always()", "build", legs + lint_job), lint),
+            ["UNGATED"],
+            legs_ok,
+        ),
+        # the org's two aggregators, as written
+        (
+            "nodespec's check-all over its matrix",
+            repo(
+                "on: pull_request\njobs:\n  check:\n    runs-on: x\n    strategy:\n"
+                "      fail-fast: false\n      matrix:\n        python: ['3.11', '3.12']\n"
+                "    steps:\n      - run: just check\n  check-all:\n    name: check\n"
+                "    if: always()\n    needs: check\n    runs-on: x\n    steps:\n"
+                "      - name: every Python leg passed\n"
+                '        run: test "${{ needs.check.result }}" = success\n'
+            ),
+            [],
+            {("r", "w.yml", "check"): "test"},
+        ),
+        (
+            "rowspec's conformance-all over its matrix",
+            repo(
+                "on: pull_request\njobs:\n  conformance:\n    runs-on: x\n    strategy:\n"
+                "      fail-fast: false\n      matrix:\n        python: ['3.11', '3.12']\n"
+                "    steps:\n      - run: just test\n  conformance-all:\n    name: conformance\n"
+                "    if: always()\n    needs: conformance\n    runs-on: x\n    steps:\n"
+                "      - name: every Python leg passed\n"
+                '        run: test "${{ needs.conformance.result }}" = success\n',
+                [{"context": "conformance"}],
+            ),
+            [],
+            {("r", "w.yml", "conformance"): "test"},
+        ),
+        # the matrix form's guards
+        (
+            "matrix named with regex characters is matched literally",
+            repo(
+                "on: pull_request\njobs:\n  legs:\n    name: c.k\n    runs-on: x\n"
+                "    strategy:\n      matrix:\n        v: [1]\n",
+                [{"context": "cxk (1)"}],
+            ),
+            ["UNGATED", "ORPHANED"],
+            None,
+        ),
+        # cannot be decided: refused, never passed
+        (
+            "allowlisted matrix beside a job reporting its form is refused",
+            repo(
+                "on: pull_request\njobs:\n  legs:\n    name: check\n    runs-on: x\n"
+                "    strategy:\n      matrix:\n        v: [1]\n"
+                "  other:\n    name: check (1)\n    runs-on: x\n",
+                [{"context": "check (1)"}],
+            ),
+            inc1,
+            legs_ok,
+        ),
+        (
+            "allowlisted matrix whose form is the only required producer is refused",
+            repo(
+                "on: pull_request\njobs:\n  legs:\n    name: check\n    runs-on: x\n"
+                "    strategy:\n      matrix:\n        v: [1]\n",
+                [{"context": "check (1)"}],
+            ),
+            inc2,
+            legs_ok,
+        ),
+        (
+            "allowlisted expression-named job beside a required check is refused",
+            repo(
+                _PR.format(job="check") + "  other:\n    name: ${{ github.ref }}\n    runs-on: x\n"
+            ),
+            inc1,
+            {("r", "w.yml", "other"): "test"},
+        ),
+        (
+            "block-named matrix is refused",
+            repo(
+                gate(
+                    "always()",
+                    more=legs.replace("    runs-on", "    name: |\n      x\n    runs-on"),
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix of exclude only is refused",
+            repo(
+                gate(
+                    "always()",
+                    more="  legs:\n    runs-on: x\n    strategy:\n      matrix:\n"
+                    "        exclude:\n          - v: 1\n",
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix whose form could be a required empty value is refused",
+            repo(gate("always()"), _CHECK + [{"context": "legs ()"}]),
+            inc2,
+            None,
+        ),
+        # cannot be decided: refused, never passed
+        (
+            "pull_request matrix in another workflow could be this required check",
+            beside(
+                pr_plain + "    strategy:\n      matrix:\n        v: [1]\n",
+                _PR.format(job="j") + "    name: check (1)\n",
+                [{"context": "check (1)"}],
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "deployment matrix in another workflow could be this required check",
+            beside(
+                target(deploy, body=matrix),
+                _PR.format(job="j") + "    name: check (1)\n",
+                [{"context": "check (1)"}],
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix whose form could be a required context is refused",
+            repo(gate("always()"), _CHECK + [{"context": "legs (3.11)"}]),
+            inc2,
+            None,
+        ),
+        (
+            "expression-named matrix is refused",
+            repo(
+                gate(
+                    "always()",
+                    more=legs.replace("    runs-on", "    name: ${{ matrix.python }}\n    runs-on"),
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix from an expression is refused",
+            repo(
+                gate(
+                    "always()",
+                    more="  legs:\n    runs-on: x\n    strategy:\n      matrix: ${{ fromJSON(vars.M) }}\n",
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix of include only is refused",
+            repo(
+                gate(
+                    "always()",
+                    more="  legs:\n    runs-on: x\n    strategy:\n      matrix:\n        include:\n          - v: 1\n",
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix with an empty list is refused",
+            repo(
+                gate(
+                    "always()",
+                    more="  legs:\n    runs-on: x\n    strategy:\n      matrix:\n        v: []\n",
+                )
+            ),
+            inc1,
+            None,
+        ),
+        (
+            "matrix calling a workflow is refused",
+            repo(
+                caller(remote, "    strategy:\n      matrix:\n        v: [1]\n"),
+                kind,
+                called={remote: conf},
+            ),
+            inc2,
+            None,
+        ),
+        (
+            "other pull_request matrix job whose form could be required is refused",
+            beside(
+                pr_plain + "    strategy:\n      matrix:\n        v: [1]\n",
+                None,
+                _CHECK + [{"context": "check (1)"}],
+            ),
+            inc2,
+            None,
+        ),
+    ]
     # ALLOW neither hides a pull request pair nor counts as a producer's absence
     first = {("r", "a.yml", "check"): "test"}
     mine = {("r", "w.yml", "check"): "test"}
@@ -2080,8 +2633,15 @@ def selftest():
         # ALLOW silences UNGATED only; TARGET_OK accepts TARGET-ONLY, and nothing else
         ("ALLOW does not accept target-only", repo(pr_target), ["TARGET-ONLY"], mine),
         (
-            "allowlisted matrix job gating nothing is not refused",
+            # an allowlisted matrix holds only while a required always() job gates it
+            "allowlisted matrix job that no aggregator needs is reported",
             repo(pr_plain + "    strategy:\n      matrix:\n        v: [1]\n", []),
+            ["UNGATED"],
+            mine,
+        ),
+        (
+            "allowlisted unresolved job in a repository that requires nothing",
+            repo(pr_plain + "    name: ${{ github.ref }}\n", []),
             [],
             mine,
         ),
@@ -2259,9 +2819,10 @@ def selftest():
             None,
         ),
         (
-            "matrix is not passed",
+            # 'check (1)' and 'check (2)' never report the required 'check'
+            "a matrix of the required name does not produce it",
             repo(_PR.format(job="check") + "    strategy:\n      matrix:\n        v: [1, 2]\n"),
-            inc2,
+            ["UNGATED", "ORPHANED"],
             None,
         ),
         (
@@ -2354,9 +2915,9 @@ def selftest():
             repo(
                 _PR.format(job="check") + "    needs: b\n  b:\n    runs-on: x\n"
                 "    strategy:\n      matrix:\n        v: [1]\n",
-                _CHECK + [{"context": "b"}],
+                _CHECK + [{"context": "b"}, {"context": "b (1)"}],
             ),
-            ["CONDITIONAL", "INCOMPLETE", "INCOMPLETE"],
+            ["CONDITIONAL", "INCOMPLETE", "INCOMPLETE", "INCOMPLETE"],
             None,
         ),
         (
@@ -2394,6 +2955,7 @@ def selftest():
         *((label, snap, want, None) for label, snap, want in cross),
         *((label, snap, want, None) for label, snap, want in pr_pair),
         *((label, snap, want, None) for label, snap, want in more_producers),
+        *aggregators,
         *pr_allow,
     ]
     bad = 0
@@ -2419,6 +2981,19 @@ def selftest():
     f, inc, stats = evaluate(snap, {})
     got = [x.split()[0] for x in f] + ["INCOMPLETE"] * len(inc) + ["?"] * (stats["pr_jobs"] != 3)
     report(f"3 pull request jobs counted ({stats['pr_jobs']})", got, exit_code(f, inc), [], 0)
+
+    # an always() job that tests no result says so, not "job-level if:"
+    f, inc, _ = evaluate(repo(gate("always()", step="echo ok")), {})
+    got = [x.split()[0] for x in f] + ["?"] * (
+        not any("no one-line run: step tests" in x for x in f)
+    )
+    report(
+        "always() without a result test names why",
+        got,
+        exit_code(f, inc),
+        ["UNGATED", "CONDITIONAL"],
+        1,
+    )
 
     # collection: failures exit 2, never 1 and never a crash
     pub = {"name": "p", "default_branch": "main", "archived": False, "private": False}
@@ -2568,8 +3143,9 @@ def selftest():
         GH = saved
 
     # --load and the live run each pass TARGET_OK; without the entry, both report it
-    global TARGET_OK
-    saved = TARGET_OK, GH
+    global TARGET_OK, ALLOW
+    saved = TARGET_OK, GH, ALLOW
+    ALLOW = {}  # the org's entries name repositories these snapshots do not hold
     GH = ["/nonexistent/gh"]  # an entry point that drops its api reads nothing real
     target_repo = {
         **org([pub], private=0),
@@ -2620,8 +3196,8 @@ def selftest():
                         sys.argv = argv_saved
                     report(f"{label} with TARGET_OK {accepted}", got, code, want, len(want))
     finally:
-        TARGET_OK, GH = saved
-    total = len(cases) + len(collection) + 13
+        TARGET_OK, GH, ALLOW = saved
+    total = len(cases) + len(collection) + 14
     print(f"selftest: {total - bad} of {total} as expected")
     return 1 if bad else 0
 

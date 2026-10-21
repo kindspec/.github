@@ -22,7 +22,7 @@ version control is where that happens.
 
     rowspec     rows    opaque row ids                  draft 0, released
     blockspec   blocks  deliberately no minted ids      draft 0 cases + reference, spike FOUND
-    nodespec    nodes   named, not positional           not started, spike closed
+    nodespec    nodes   named, not positional           draft 0 spec + reference checker
 
 Each kind is named after its **unit of identity**, because identity is the hard
 part of every one of them.
