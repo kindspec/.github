@@ -566,7 +566,12 @@ from each public repository's `.github/workflows/` on `main`).
   bypass let the push through (`gh api
   repos/kindspec/<repo>/rulesets/rule-suites/<id> --jq .rule_evaluations`:
   kindkit 4650992929, rowspec 4652374848). So the rule matches `v*` tags; a
-  push without the bypass has not been watched being rejected;
+  push without the bypass has not been watched being rejected. Today the
+  org's only member is its admin (`gh api orgs/kindspec/members --jq
+  length` prints 1), and the credentials agents run with carry the bypass,
+  as both pushes above show, so the ruleset guards against future non-admin
+  collaborators and tokens, not against an agent; for an agent, the gate is
+  the rule that a release tag is pushed only with the owner's approval (§2);
 - `squash_merge_commit_title` is `PR_TITLE` and `squash_merge_commit_message`
   `PR_BODY` on all six; `allow_auto_merge` is `false` on all six.
 
@@ -618,8 +623,8 @@ Settled.
   readings `SPEC.md` §12 lists (§1).
 - **The CSV profile's readings in SPEC.md §13 are decided**, and so are the
   spec rulings of rowspec#110, #115, #116, #117 and #118.
-- **A rowspec release is tagged only with the owner's approval**, because a
-  `v*` tag is what publishes to PyPI.
+- **A release of rowspec or kindkit is tagged only with the owner's
+  approval**, because a `v*` tag is what publishes to PyPI.
 
 Done since 2026-10-15: blockspec#39 merged and blockspec#2 is closed (§1);
 rowspec's reference defects and spec questions filed 2026-10-14/15
