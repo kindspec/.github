@@ -125,9 +125,17 @@ repositories that is today:
 Clause 1 says *every* workflow: for CodeQL that means read it, because the gate
 will not.
 
-Nobody bypasses: the bypass list is empty on all six, and that includes org
-owners. A rule that its author can step around is the thing this project exists
-not to ship.
+Nobody bypasses the merge gate: the bypass list of each of the six
+main-branch rulesets is empty, and that includes org owners. A rule that its
+author can step around is the thing this project exists not to ship. The one
+bypass is on the `release tags` rulesets of kindkit and rowspec, which block
+creating, updating and deleting a `v*` tag for everyone except org admins:
+PyPI trusted publishing trusts the workflow file and the environment, not the
+commit, so whoever can push a `v*` tag can publish whatever it points at.
+Today the org's only member is its admin, and the credentials agents run
+with carry that bypass, so the ruleset guards against future non-admin
+collaborators and tokens, not against an agent; for an agent, the gate is
+the rule that a release tag is pushed only with the owner's approval.
 
 **`require_extra_approval_for_unattributed_changes` is off, deliberately.**
 GitHub defaults it on, and it adds one to the approval count for changes not

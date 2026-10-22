@@ -12,7 +12,7 @@ reproduced from this checkout alone, that is said.
 
 ## 1. Where each repository stands
 
-### rowspec — v0.4.0 released to PyPI; `main` 48 commits ahead of it
+### rowspec — v0.5.0 released to PyPI
 
     631 conformance cases          find conformance/cases -name expect.json | wc -l
     281 CSV-profile cases          find conformance/cases-csv -name expect.json | wc -l
@@ -25,17 +25,18 @@ reproduced from this checkout alone, that is said.
     3 equivalent, 0 stale, 0 broken
     41 killed, 0 survived          just mutants-csv    (--profile sidecar)
     0 equivalent, 0 stale, 0 broken
-    1642 passed, 2 skipped         just test   (both skips are openpyxl absent)
+    1650 passed, 2 skipped         just test   (both skips are openpyxl absent)
     62 passed                      just test-xlsx
     1 passed                       just test-libreoffice   (soffice on PATH)
     857 files clean                just check
 
-**All of these reproduce on 2026-10-21 at `8cb32c9`** (rowspec#271's merge),
-in a fresh clone, through `just`, with kindkit at the pinned `8e21b55`
-(`grep 'kindkit @' pyproject.toml`). They were measured with a private uv
-cache (`UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy`, §4), and `git status
---short` printed nothing after the mutation gates. The two skips are
-`tests/test_xlsx_export.py` and `tests/test_xlsx_libreoffice.py`, each "could
+**All of these reproduce on 2026-10-21 at `d368364`** (rowspec#276's merge,
+tagged `v0.5.0`), in a fresh clone, through `just`, with kindkit at the
+pinned 0.2.0 (`grep -n 'kindkit==' pyproject.toml`). They were measured
+with a private uv cache (`UV_CACHE_DIR=<scratch dir> UV_LINK_MODE=copy`,
+§4), and `git status --short` printed nothing after the mutation gates.
+The two skips are `tests/test_xlsx_export.py` and
+`tests/test_xlsx_libreoffice.py`, each "could
 not import 'openpyxl'" (`uv run --exact pytest -q -rs` on those two files). A
 sandboxed session that cannot run `uv` (see §3) can call the `.venv`
 directly instead; the equivalents:
@@ -47,11 +48,17 @@ directly instead; the equivalents:
     ./.venv/bin/python -m pytest -q
     ./.venv/bin/ruff format --check . && ./.venv/bin/ruff check .
 
-**What `main` has beyond `v0.4.0`** (`gh api
-repos/kindspec/rowspec/compare/v0.4.0...main --jq '.ahead_by'` prints 48 on
-2026-10-21; `--jq '.commits[].commit.message|split("\n")[0]'` lists them).
-`CHANGELOG.md` `[Unreleased]` is authoritative; the highlights:
+**What 0.5.0 carries beyond 0.4.0** (`gh api
+repos/kindspec/rowspec/compare/v0.4.0...v0.5.0 --jq '.ahead_by'` prints 52;
+`--jq '.commits[].commit.message|split("\n")[0]'` lists them).
+`CHANGELOG.md` `[0.5.0]` is authoritative; the highlights:
 
+- **A `conformance` extra** (rowspec#275, closing #47): `pip install
+  '.[conformance]'` in an unpacked sdist installs `kindkit>=0.2.0,<0.3`, so
+  the suite the sdist ships runs under plain pip. The dev group pins
+  `kindkit==0.2.0` from PyPI in place of a git commit, and the `kind` job
+  calls `kind.yml` at that release's commit, `4764461` (`grep -n kindkit
+  pyproject.toml .github/workflows/check.yml`).
 - **`rowspec.edit`, an editing API for `.mdtbl` files**: text in, text out,
   changing only the lines an operation is about, and refusing an edit whose
   input or result SPEC.md refuses, with that refusal's §9 identifier.
@@ -68,9 +75,11 @@ repos/kindspec/rowspec/compare/v0.4.0...main --jq '.ahead_by'` prints 48 on
   CSV-profile refusal one, and §9 gains entry 27, `column-type-mismatch`
   (rowspec#103); and cases assert identifiers that no parse case asserted
   alone (rowspec#99). No `expect.json` under `conformance/cases-csv/`
-  carries `refusal_contains` on `main` (`git grep -l '"refusal_contains"'
-  origin/main -- 'conformance/cases-csv/**/expect.json' | wc -l` prints 0).
-- **CLI and CSV-mode fixes**, listed under `[Unreleased]` `### Fixed`.
+  carries `refusal_contains` at `v0.5.0` (`git grep -l '"refusal_contains"'
+  v0.5.0 -- 'conformance/cases-csv/**/expect.json' | wc -l` prints 0).
+- **CLI, editing and CSV-mode fixes**, listed under `[0.5.0]` `### Fixed`,
+  among them `set_formula` refilling the whole cell (rowspec#274, closing
+  #272).
 
 **What 0.4.0 carries beyond 0.3.0.** `CHANGELOG.md` `[0.4.0]` is
 authoritative; these highlights were written when they were still
@@ -96,7 +105,7 @@ unreleased:
   **In 0.4.0 the CSV profile does not carry §9's identifiers**: its cases
   assert `refusal_contains` (129 files, `git grep -l '"refusal_contains"'
   v0.4.0 -- 'conformance/cases-csv/**/expect.json' | wc -l`), and SPEC.md
-  §13 says so. `main` has since given them identifiers (rowspec#103, above).
+  §13 says so. 0.5.0 gives them identifiers (rowspec#103, above).
 - **xlsx export writes live formulas** (rowspec#84, part of rowspec#35):
   computed columns as structured-reference formulas, unfiltered declarations
   as `SUBTOTAL`, and a `NotExpressible` refusal for what a spreadsheet cannot
@@ -132,22 +141,25 @@ conform-csv`, `just mutants-csv` and the example recipe, and
 `conformance-all` reports it under the required name `conformance`.
 `xlsx-extra` runs `just test-xlsx`, installs LibreOffice and runs `just
 test-libreoffice`. `kind` calls kindkit's reusable
-workflow at `8e21b55` and reports as **`kind / conformance`**: the case tree
-against kindkit's convention, the suite, the second implementation and the
-mutation gate. `action-selftest.yml` supplies `passes-on-a-good-tree` and
-`fails-on-a-broken-total`. Both workflows run on `push` to `main` only, plus
-`pull_request` (`grep -n -A3 '^on:' .github/workflows/*.yml`). On `8cb32c9`
-every check run is `success` (`gh api
-repos/kindspec/rowspec/commits/8cb32c9/check-runs --jq
+workflow at `4764461`, kindkit v0.2.0's commit, and reports as **`kind /
+conformance`**: the case tree against kindkit's convention, the suite, the
+second implementation and the mutation gate. `action-selftest.yml` supplies
+`passes-on-a-good-tree` and `fails-on-a-broken-total`. Both workflows run on
+`push` to `main` only, plus `pull_request` (`grep -n -A3 '^on:'
+.github/workflows/*.yml`). On `d368364` every check run is `success` (`gh api
+repos/kindspec/rowspec/commits/d368364/check-runs --jq
 '.check_runs[]|"\(.name) \(.conclusion)"'`). `release.yml` runs on `v*`
 tags.
 
-**0.4.0 is released.** The tag `v0.4.0` peels to `65a7841` (`git ls-remote
---tags https://github.com/kindspec/rowspec`), PyPI has `0.4.0` (`curl -s
-https://pypi.org/pypi/rowspec/json`), and its GitHub Release is marked
-Latest, published 2026-10-16T01:30:40Z (`gh release list -R
-kindspec/rowspec`; `gh api repos/kindspec/rowspec/releases/tags/v0.4.0 --jq
-.published_at`). No later tag exists.
+**0.5.0 is released.** The tag `v0.5.0` peels to `d368364`, rowspec#276's
+merge (`git ls-remote --tags https://github.com/kindspec/rowspec`); release
+run 39692198264, on the tag's push, concluded `success` (`gh api
+"repos/kindspec/rowspec/actions/workflows/release.yml/runs?per_page=5"`).
+PyPI has `0.5.0`, with the extras `conformance` and `xlsx` (`curl -s
+https://pypi.org/pypi/rowspec/json`, `.info.provides_extra`), and its GitHub
+Release is marked Latest, published 2026-10-21T23:27:34Z (`gh release list -R
+kindspec/rowspec`; `gh api repos/kindspec/rowspec/releases/tags/v0.5.0 --jq
+.published_at`). `v0.4.0` peels to `65a7841`.
 
 **The mutation gates are safe to kill.** `just mutants` writes its mutants to
 `conformance/mutant_impl.py`, and `just mutants-csv` to
@@ -165,48 +177,59 @@ shows it.
 **Open issues** (`gh issue list -R kindspec/rowspec --state open --limit
 200`, on 2026-10-21):
 
-- editing: rowspec#272 (`set_formula` centres a formula padded on both
-  sides), filed 2026-10-21;
 - xlsx export: rowspec#35 (filtered and group aggregates, labelled
   `blocked`), #83 and #88 (spreadsheet arithmetic disagreeing with `rowspec
-  eval`);
-- packaging: rowspec#47 (the sdist cannot declare kindkit, waiting on its
-  publication).
+  eval`).
 
-Every other issue this file named on 2026-10-15 is closed, rowspec#141
-merged (`gh api repos/kindspec/rowspec/issues/<n> --jq .state`).
+rowspec#272 was closed by rowspec#274 and rowspec#47 by rowspec#275, both on
+2026-10-21 (`closingIssuesReferences` on each pull request, §4). Every other
+issue this file named on 2026-10-15 is closed, rowspec#141 merged (`gh api
+repos/kindspec/rowspec/issues/<n> --jq .state`).
 
 The suite, the mutation gate and the case-tree convention come from kindkit,
-pinned by commit. What stayed in rowspec is everything kindkit cannot be told.
+pinned to an exact release. What stayed in rowspec is everything kindkit
+cannot be told.
 The second implementation (`reference/rowspec_alt/`) is the load-bearing one —
 written from `SPEC.md` alone and run against the same tree in CI. It claims
 the `mdtbl` profile only; asked to run `--profile csv` it exits 2.
 
-### kindkit — tagged v0.1.0, consumed by rowspec and blockspec, no open issues
+### kindkit — v0.2.0 on PyPI, consumed by rowspec and blockspec, no open issues
 
     148 mutations, 148 caught, 0 survived, 0 broken   just mutants   (throwaway clone)
     220 passed                                         just test   (node on PATH)
     28 files clean                                     just check
     6 case(s) in its own kv tree                       just cases
 
-All of these reproduce on 2026-10-15 at `6ebd80d`, through `just` in a fresh
-clone with a private uv cache. `6ebd80d` (kindkit#26) is still `main`; nothing
-has merged since 2026-10-08 (`gh pr list -R kindspec/kindkit --state all`). To
-count tests, read pytest's own summary line.
+All of these reproduce on 2026-10-21 at `51c4118` (kindkit#28's merge),
+through `just` in a fresh clone with a private uv cache, and `git status
+--short` printed nothing after `just mutants`. They match what `6ebd80d` gave
+on 2026-10-15. No issue is open (`gh issue list -R kindspec/kindkit --state
+open`). To count tests, read pytest's own summary line.
 
-**`v0.1.0` is older than `main`.** The tag peels to `bf716e3` (`git ls-remote
---tags https://github.com/kindspec/kindkit`), and `main` is 8 commits ahead
-(`gh api repos/kindspec/kindkit/compare/v0.1.0...main --jq .ahead_by`).
-kindkit is not on PyPI (`curl -s -o /dev/null -w '%{http_code}'
-https://pypi.org/pypi/kindkit/json` prints 404).
+**0.2.0 is on PyPI.** The tag `v0.2.0` peels to `4764461`, kindkit#27's
+merge (`git ls-remote --tags https://github.com/kindspec/kindkit`), and PyPI
+has `0.2.0` (`curl -s https://pypi.org/pypi/kindkit/json`). `release.yml`
+publishes through a PyPI Trusted Publisher: its `publish` job runs in the
+`pypi` environment with `id-token: write`, and the workflow's header says
+no API token is stored anywhere. Run
+39679330171, on the tag's push, concluded `success` with `publish`
+`success`; run 39678830614, a `workflow_dispatch` at the same commit, is the
+dry run, with `publish` skipped (`gh api
+repos/kindspec/kindkit/actions/runs/<id>/jobs --jq '.jobs[]|"\(.name)
+\(.conclusion)"'`). The tag has no GitHub Release (`gh release list -R
+kindspec/kindkit`). kindkit#28, a README change, merged after the tag; `gh api
+repos/kindspec/kindkit/compare/v0.2.0...main --jq .ahead_by` counts what
+`main` has beyond the tag.
 
-**Two consumers, at two pins.** rowspec pins `8e21b55` and calls `kind.yml` at
-it. blockspec pins `6ebd80d` in `pyproject.toml` and in `conformance.yml`'s
-`KINDKIT_SHA`, and uses kindkit's case-tree validator, runner and mutation
-gate (`grep -n kindkit pyproject.toml .github/workflows/conformance.yml
+**Two consumers, at two pins.** rowspec pins `kindkit==0.2.0` in its dev
+group and calls `kind.yml` at `4764461` (rowspec#275; `grep -n kindkit
+pyproject.toml .github/workflows/check.yml`, run in rowspec). blockspec pins
+`6ebd80d` in `pyproject.toml` and in `conformance.yml`'s `KINDKIT_SHA`, and
+uses kindkit's case-tree validator, runner and mutation gate (`grep -n
+kindkit pyproject.toml .github/workflows/conformance.yml
 conformance/mutants.py`, run in blockspec); it does not call `kind.yml`.
-`8e21b55` is 2 commits behind `6ebd80d` (`gh api
-repos/kindspec/kindkit/compare/8e21b55...6ebd80d --jq .ahead_by`).
+`6ebd80d` is 1 commit behind `4764461` (`gh api
+repos/kindspec/kindkit/compare/6ebd80d...4764461 --jq .ahead_by`).
 
 **kindkit's own gate edits tracked files.** `tools/mutation_gate.py` mutates
 tracked files in place and restores them in a `finally`. A completed run is
@@ -419,13 +442,19 @@ Mermaid parses and that is wrong about which nodes exist. **No reading in
 `scripts/check_required_checks.py`.
 
 **The required-checks audit exits 0 on the org** with the script as .github#28
-leaves it. On 2026-10-21:
+leaves it. On 2026-10-21, after kindkit#27 and rowspec#276 merged:
 
     $ python3 -I scripts/check_required_checks.py --public-only
     2 private repositories skipped (--public-only)
-    6 repositories, 9 workflows, 12 pull request jobs, 10 required checks: 0 finding(s), 0 not evaluated
+    6 repositories, 10 workflows, 12 pull request jobs, 10 required checks: 0 finding(s), 0 not evaluated
 
-The same day, `main` at `18d47b6` gave `2 finding(s), 4 not evaluated`, exit 1:
+    $ python3 -I scripts/check_required_checks.py --selftest
+    selftest: 329 of 329 as expected
+
+The tenth workflow is kindkit's `release.yml` (kindkit#27), which runs on
+`v*` tags and `workflow_dispatch` only, so it adds no pull request job.
+Earlier that day, the audit gave the same line with `9 workflows`, and
+`main` at `18d47b6` gave `2 finding(s), 4 not evaluated`, exit 1:
 CONDITIONAL on nodespec's `check-all` and rowspec's `conformance-all`, and
 four refusals over those repositories' two Python matrix jobs. Each `-all` job
 reports the matrix under the required name with `if: always()`, which cannot
@@ -521,9 +550,28 @@ from each public repository's `.github/workflows/` on `main`).
   scanning and push protection `enabled` on all six repositories;
 - `gh api orgs/kindspec` shows two-factor required and both new-repository
   defaults `true`;
-- `gh api repos/kindspec/<repo>/rulesets/<id>` shows every ruleset `active`
-  with an empty bypass list; rowspec, kindkit, blockspec and nodespec add
+- `gh api repos/kindspec/<repo>/rulesets/<id>` shows every ruleset
+  `active`. Each repository's `main branch` ruleset has an empty bypass
+  list; rowspec, kindkit, blockspec and nodespec add
   `required_status_checks`, strict;
+- kindkit and rowspec each also have a tag ruleset, `release tags` (kindkit
+  25592108, rowspec 25592109, created 2026-10-21): on `refs/tags/v*` it
+  blocks creation, update and deletion, with `OrganizationAdmin` as its one
+  bypass actor. A `v*` tag publishes to PyPI, and PyPI's trusted publishing
+  trusts the workflow file and the environment, not the commit, so only an
+  org admin may create, move or delete one. These are the only rulesets
+  with a bypass. The pushes of kindkit's `v0.2.0` and rowspec's `v0.5.0` are
+  logged with result `bypass`: in each, the `creation` rule evaluated `fail`,
+  "Cannot create ref due to creations being restricted.", and the org-admin
+  bypass let the push through (`gh api
+  repos/kindspec/<repo>/rulesets/rule-suites/<id> --jq .rule_evaluations`:
+  kindkit 4650992929, rowspec 4652374848). So the rule matches `v*` tags; a
+  push without the bypass has not been watched being rejected. Today the
+  org's only member is its admin (`gh api orgs/kindspec/members --jq
+  length` prints 1), and the credentials agents run with carry the bypass,
+  as both pushes above show, so the ruleset guards against future non-admin
+  collaborators and tokens, not against an agent; for an agent, the gate is
+  the rule that a release tag is pushed only with the owner's approval (§2);
 - `squash_merge_commit_title` is `PR_TITLE` and `squash_merge_commit_message`
   `PR_BODY` on all six; `allow_auto_merge` is `false` on all six.
 
@@ -548,6 +596,13 @@ run 37720734896, a `workflow_dispatch` on `main`, failed `publish` with
 "Branch "main" is not allowed to deploy to pypi due to environment protection
 rules". rowspec#55 is closed on that.
 
+**kindkit's `pypi` environment has the same single policy, `tag v*`** (`gh
+api repos/kindspec/kindkit/environments/pypi/deployment-branch-policies`),
+and has not been watched refusing: its dry run skips `publish` by the job's
+`if:`, so the environment is never asked, and on 2026-10-21 its only
+deployment is `v0.2.0` at `4764461` (`gh api
+"repos/kindspec/kindkit/deployments?environment=pypi"`).
+
 ---
 
 ## 2. What comes next
@@ -568,30 +623,25 @@ Settled.
   readings `SPEC.md` §12 lists (§1).
 - **The CSV profile's readings in SPEC.md §13 are decided**, and so are the
   spec rulings of rowspec#110, #115, #116, #117 and #118.
-- **kindkit goes to PyPI once its contracts have a second consumer.**
-  blockspec now consumes the validator, the runner and the gate (§1). It is
-  still unpublished; publishing it is the owner's call.
-- **A rowspec release is tagged only with the owner's approval**, because a
-  `v*` tag is what publishes to PyPI. 0.4.0 carried the breaking change for
-  implementations (§9 identifiers). Whether and when `main`'s `[Unreleased]`
-  is released is the owner's call.
+- **A release of rowspec or kindkit is tagged only with the owner's
+  approval**, because a `v*` tag is what publishes to PyPI.
 
 Done since 2026-10-15: blockspec#39 merged and blockspec#2 is closed (§1);
 rowspec's reference defects and spec questions filed 2026-10-14/15
 (rowspec#112, #113, #130–#135, #140, #142–#145) are closed and rowspec#141
-merged; and identifiers end to end (rowspec#99, #101, #103) are closed.
+merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
+2026-10-21, kindkit 0.2.0 was published to PyPI (kindkit#27) and rowspec
+0.5.0 released (rowspec#276), with rowspec#47 and #272 closed (§1).
 
 In order:
 
 1. **blockspec — draft 0 beyond one implementation.** `SPEC.md` is written,
    and there is no second implementation; rowspec's history is that the
    second implementation is what tests whether the spec defines the format.
-2. **kindkit — publication**, if the owner chooses it (above); rowspec#47
-   waits on it.
 
-Also open, in no decided order: blockspec#62 item 5 (§1), and rowspec#272
-and the xlsx export issues rowspec#35, #83 and #88. Each fix needs a case
-written by someone who did not write the fix (`AGENTS.md` §2.1, §5).
+Also open, in no decided order: blockspec#62 item 5 (§1), and the xlsx
+export issues rowspec#35, #83 and #88. Each fix needs a case written by
+someone who did not write the fix (`AGENTS.md` §2.1, §5).
 
 Open issues carry acceptance criteria and a red-before-green requirement. List
 them per repository rather than trusting a count written here:
@@ -602,7 +652,7 @@ Issues closed since 2026-10-09 (`gh issue list -R kindspec/<repo> --state
 closed --limit 300 --json number,closedAt --jq
 '[.[]|select(.closedAt>="2026-10-09")|.number]'`, on 2026-10-21):
 
-- rowspec: 82 issues, too many to list here; run the command;
+- rowspec: 84 issues, too many to list here; run the command;
 - blockspec: blockspec#2, #3, #4, #5, #21, #42, #49, #64 and #66;
 - .github: .github#22;
 - kindkit, research and nodespec: none.
@@ -619,9 +669,10 @@ claim is about what stock git does. rowspec's `just test-libreoffice` needs
 
 **First command in rowspec, kindkit, blockspec and nodespec is `uv sync`** (or `just
 setup`). It creates `.venv`, which is gitignored. `uv sync` needs network
-reach to `github.com`: rowspec and blockspec take `kindkit` as a git
-dependency, so an offline sync fails there. Run it somewhere `~/.cache/uv` is
-writable; see the sandbox note at the end of this section.
+reach: blockspec takes `kindkit` as a git dependency from `github.com`, and
+rowspec takes it from PyPI, so an offline sync fails in both. Run it
+somewhere `~/.cache/uv` is writable; see the sandbox note at the end of
+this section.
 
 **blockspec's spike harness is pure stdlib, run with `python3` directly**; the
 case tree check (`just tree`) is too. Everything else in blockspec goes
@@ -848,8 +899,9 @@ on every pull request you open.
 - **The per-directory licence split**, and why: fixtures are CC0 with no prose
   attached so they can be vendored into an implementation in any language.
 - **Depend on kindkit rather than vendoring it.** Vendoring reintroduces the
-  duplicated-implementation drift the kit exists to prevent. A kind pins it by
-  commit.
+  duplicated-implementation drift the kit exists to prevent. A kind pins it
+  exactly: by commit, or by an exact PyPI release, as rowspec's
+  `kindkit==0.2.0` does.
 
 ---
 
