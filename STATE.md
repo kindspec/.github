@@ -1,6 +1,6 @@
 # State of play
 
-Current as of **2026-10-21 (UTC)**. A figure measured earlier says when, and
+Current as of **2026-10-21 (UTC)**, except where a section says otherwise. A figure measured earlier says when, and
 at which commit. Read `AGENTS.md` first — it is the contract. This file is
 where the work actually stands, what comes next, and the traps that have
 already cost time.
@@ -12,7 +12,13 @@ reproduced from this checkout alone, that is said.
 
 ## 1. Where each repository stands
 
-### rowspec — v0.5.0 released to PyPI
+### rowspec — v0.6.1 released to PyPI
+
+**Figures below are from v0.5.0.** rowspec has since released v0.6.0
+(2026-10-23) and v0.6.1 (2026-11-09); `gh release list -R kindspec/rowspec`
+and the PyPI page say which is latest. Its `ROADMAP.md` carries the current
+figures, each with its command.
+
 
     631 conformance cases          find conformance/cases -name expect.json | wc -l
     281 CSV-profile cases          find conformance/cases-csv -name expect.json | wc -l
