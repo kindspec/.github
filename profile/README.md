@@ -18,9 +18,10 @@ Every format follows three rules:
   the reason.
 - **Plain git is enough.** No merge driver, no plugin.
 
-Each format is a written spec plus a test suite. The suite merges real branches
-with real git, computes the result and checks the numbers. Then it breaks the
-implementation on purpose, to prove the tests can fail.
+Each format is a written spec plus a test suite made of plain files. rowspec's
+suite merges real branches with real git, computes the result and checks the
+numbers. Every suite is then run against an implementation broken on purpose,
+to prove the tests can fail.
 
 ## Try it
 
