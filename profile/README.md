@@ -48,7 +48,7 @@ rowspec eval .     # what do the totals come to?
 | | what it is | status |
 |---|---|---|
 | **[rowspec](https://github.com/kindspec/rowspec)** | tables | released, [on PyPI](https://pypi.org/project/rowspec/) |
-| **[blockspec](https://github.com/kindspec/blockspec)** | documents | spec, test suite and reference |
+| **[blockspec](https://github.com/kindspec/blockspec)** | documents | released, [on PyPI](https://pypi.org/project/blockspec/) |
 | **[nodespec](https://github.com/kindspec/nodespec)** | diagrams | draft spec and checker |
 | [kindkit](https://github.com/kindspec/kindkit) | the shared test runner | released, [on PyPI](https://pypi.org/project/kindkit/) |
 | [research](https://github.com/kindspec/research) | the measurements the specs cite | ongoing record |
