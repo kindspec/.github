@@ -12,10 +12,11 @@ reproduced from this checkout alone, that is said.
 
 ## 1. Where each repository stands
 
-### rowspec — v0.6.1 released to PyPI
+### rowspec — v0.7.0 released to PyPI
 
 **Figures below are from v0.5.0.** rowspec has since released v0.6.0
-(2026-10-23) and v0.6.1 (2026-11-09); `gh release list -R kindspec/rowspec`
+(2026-10-23), v0.6.1 (2026-11-09) and v0.7.0 (2026-11-10), which refuses a
+keyed table whose rows are out of key order (rowspec#284); `gh release list -R kindspec/rowspec`
 and the PyPI page say which is latest. Its `ROADMAP.md` carries the current
 figures, each with its command.
 
@@ -654,9 +655,9 @@ merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
 
 In order:
 
-1. **rowspec#284 — rows stay in key order.** The cost is measured against a
-   written bar first.
-2. **nodespec#27 — its suite merges real branches and checks the result.**
+1. **nodespec#27 — its suite merges real branches and checks the result.**
+
+rowspec#284 (rows stay in key order) closed and shipped in rowspec 0.7.0.
 
 Also open, in no decided order: the xlsx
 export issues rowspec#35, #83 and #88. Each fix needs a case written by
