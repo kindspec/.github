@@ -245,7 +245,21 @@ clone, and if you do kill one, **`git status` is the list**.
 **The gate is Python-only** — `tokenize`, `ast`, `compile`. A kind whose
 reference implementation is not Python gets the runner and not the gate.
 
-### blockspec — the spike's binding verdict is FOUND; draft 0 has a SPEC.md, a case tree and a reference
+### blockspec — v0.1.0 released to PyPI
+
+**Current as of 2026-11-09.** Draft 0 shipped as 0.1.0 from `adb296e`: run
+42743472116 passed `gate`, `build` and `publish` (`gh run view 42743472116 -R
+kindspec/blockspec --json jobs`), and PyPI serves the wheel and the sdist
+(`curl -s https://pypi.org/pypi/blockspec/json`). The package has
+`blockspec check` and an Action. Its 767 conformance cases, which include
+`merge` cases running stock `git merge`, pass against the reference and against
+`reference/blockspec_alt/`, a second implementation written from `SPEC.md`
+(`just conform`, `just conform-alt`). Adjudication 0005 closes the gaps those
+exposed and adds two refusals, `dangling-link` and `name-shadows-slug`. The
+sections below are the history as of 2026-10-21 unless they say otherwise.
+
+**The verdict and draft 0: the spike's binding verdict is FOUND; draft 0 has a
+SPEC.md, a case tree and a reference.**
 
 **The spike.** blockspec#2 ran under three pre-registrations; the verdict that
 binds is pre-registration 3's run 2, **FOUND** (`spike/LOG.md` §35):
@@ -378,7 +392,8 @@ cache:
   repos/kindspec/blockspec/commits/3629226/check-runs`).
 - **The mutation gate is not in CI**, by blockspec's `AGENTS.md`, Status: a
   survivor is a hole for the case author, not a reference bug. Run it by hand.
-- **There is no second implementation.** The adjudications decide draft 0,
+- **A second implementation** came later: `reference/blockspec_alt/`, added
+  before 0.1.0 (see the top of this section). The adjudications decide draft 0,
   `SPEC.md` writes it up, and the tree encodes it.
 
 **blockspec's own documents match this.** blockspec#39, which brought
@@ -386,10 +401,8 @@ cache:
 with the verdict and draft 0, merged on 2026-10-15 (`gh api
 repos/kindspec/blockspec/pulls/39 --jq .merged_at`).
 
-**One open issue**, blockspec#62, the questions `SPEC.md` leaves open around
-U+0000; its latest comment records the owner's ruling on item 4 and says
-item 5 stays open (`gh api repos/kindspec/blockspec/issues/62/comments`;
-`gh issue list -R kindspec/blockspec --state open`).
+**No open issues** as of 2026-11-09 (`gh issue list -R kindspec/blockspec --state
+open`). blockspec#62 is closed: `SPEC.md` now answers its U+0000 questions.
 
 **`spike/README.md` "Read these before believing anything here"** still
 applies to any spike result: `LOG.md` §9 retracts the claim that the defect
@@ -641,11 +654,11 @@ merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
 
 In order:
 
-1. **blockspec — draft 0 beyond one implementation.** `SPEC.md` is written,
-   and there is no second implementation; rowspec's history is that the
-   second implementation is what tests whether the spec defines the format.
+1. **rowspec#284 — rows stay in key order.** The cost is measured against a
+   written bar first.
+2. **nodespec#27 — its suite merges real branches and checks the result.**
 
-Also open, in no decided order: blockspec#62 item 5 (§1), and the xlsx
+Also open, in no decided order: the xlsx
 export issues rowspec#35, #83 and #88. Each fix needs a case written by
 someone who did not write the fix (`AGENTS.md` §2.1, §5).
 
