@@ -392,7 +392,8 @@ cache:
   repos/kindspec/blockspec/commits/3629226/check-runs`).
 - **The mutation gate is not in CI**, by blockspec's `AGENTS.md`, Status: a
   survivor is a hole for the case author, not a reference bug. Run it by hand.
-- **There is no second implementation.** The adjudications decide draft 0,
+- **A second implementation** came later: `reference/blockspec_alt/`, added
+  before 0.1.0 (see the top of this section). The adjudications decide draft 0,
   `SPEC.md` writes it up, and the tree encodes it.
 
 **blockspec's own documents match this.** blockspec#39, which brought
@@ -653,11 +654,11 @@ merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
 
 In order:
 
-1. **blockspec — draft 0 beyond one implementation.** `SPEC.md` is written,
-   and there is no second implementation; rowspec's history is that the
-   second implementation is what tests whether the spec defines the format.
+1. **rowspec#284 — rows stay in key order.** The cost is measured against a
+   written bar first.
+2. **nodespec#27 — its suite merges real branches and checks the result.**
 
-Also open, in no decided order: blockspec#62 item 5 (§1), and the xlsx
+Also open, in no decided order: the xlsx
 export issues rowspec#35, #83 and #88. Each fix needs a case written by
 someone who did not write the fix (`AGENTS.md` §2.1, §5).
 
