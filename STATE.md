@@ -16,8 +16,9 @@ reproduced from this checkout alone, that is said.
 
 **Figures below are from v0.5.0.** rowspec has since released v0.6.0
 (2026-10-23), v0.6.1 (2026-11-09) and v0.7.0 (2026-11-10), which refuses a
-keyed table whose rows are out of key order (rowspec#284); `gh release list -R kindspec/rowspec`
-and the PyPI page say which is latest. Its `ROADMAP.md` carries the current
+keyed table whose rows are out of key order (rowspec#284). The PyPI page says
+which is latest, since the release workflow publishes there and a GitHub
+release is made by hand afterwards. Its `ROADMAP.md` carries the current
 figures, each with its command.
 
 
@@ -651,13 +652,12 @@ rowspec's reference defects and spec questions filed 2026-10-14/15
 (rowspec#112, #113, #130–#135, #140, #142–#145) are closed and rowspec#141
 merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
 2026-10-21, kindkit 0.2.0 was published to PyPI (kindkit#27) and rowspec
-0.5.0 released (rowspec#276), with rowspec#47 and #272 closed (§1).
+0.5.0 released (rowspec#276), with rowspec#47 and #272 closed (§1). On
+2026-11-10, rowspec#284 (rows stay in key order) closed and shipped in rowspec
+0.7.0.
 
-In order:
-
-1. **nodespec#27 — its suite merges real branches and checks the result.**
-
-rowspec#284 (rows stay in key order) closed and shipped in rowspec 0.7.0.
+Next: **nodespec#27 — its suite merges real branches and checks the
+result.**
 
 Also open, in no decided order: the xlsx
 export issues rowspec#35, #83 and #88. Each fix needs a case written by
