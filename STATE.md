@@ -447,7 +447,11 @@ frozen `aggregate.verdict` on the non-null-key cases (`LOG.md` §15,
 `expect.json` files under `conformance/` today, `gh api
 "repos/kindspec/nodespec/git/trees/main?recursive=1"`). One workflow,
 `.github/workflows/check.yml`, runs a Python 3.11 and 3.12 matrix and a
-`check` aggregator, and the ruleset requires `check`, strict. No open issues
+`check` aggregator, and the ruleset requires `check`, strict.
+
+On 2026-11-11 nodespec#28 closed nodespec#27: `conformance/cases/merge/`
+holds 71 cases that merge two branches with stock git and check the merged
+file, and the runner's floor is 393 cases. No open issues
 (`gh issue list -R kindspec/nodespec --state open`).
 
 **Its existence criterion is met.** `existence/RESULT.md` records three
@@ -654,12 +658,10 @@ merged; and identifiers end to end (rowspec#99, #101, #103) are closed. On
 2026-10-21, kindkit 0.2.0 was published to PyPI (kindkit#27) and rowspec
 0.5.0 released (rowspec#276), with rowspec#47 and #272 closed (§1). On
 2026-11-10, rowspec#284 (rows stay in key order) closed and shipped in rowspec
-0.7.0.
+0.7.0. On 2026-11-11, nodespec#27 (its suite merges real branches and checks
+the result) closed through nodespec#28.
 
-Next: **nodespec#27 — its suite merges real branches and checks the
-result.**
-
-Also open, in no decided order: the xlsx
+Open, in no decided order: the xlsx
 export issues rowspec#35, #83 and #88. Each fix needs a case written by
 someone who did not write the fix (`AGENTS.md` §2.1, §5).
 
